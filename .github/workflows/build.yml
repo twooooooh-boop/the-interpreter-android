@@ -3,12 +3,11 @@ name: Build Android APK
 on:
   push:
     branches: [main, master]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write   # lets tag builds attach the APK to a GitHub Release
+  contents: write
 
 jobs:
   build:
@@ -24,7 +23,9 @@ jobs:
           set -a; . ./project.env; set +a
           {
             echo "APK_NAME=$APK_NAME"
+            echo "APP_NAME=$APP_NAME"
             echo "REPO_NAME=$REPO_NAME"
+            echo "SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)"
           } >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
@@ -38,7 +39,7 @@ jobs:
         with:
           packages: ''
 
-      - name: Install SDK / NDK pieces love-android 11.5a needs
+      - name: Install SDK / NDK pieces
         run: |
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "build-tools;33.0.1" "ndk;25.2.9519653"
@@ -52,12 +53,12 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('project.env') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Use the fixed debug keystore (every build installs as an update)
+      - name: Fixed debug keystore
         run: |
           mkdir -p ~/.android
           cp android/debug.keystore ~/.android/debug.keystore
 
-      - name: Generate Android project (love-android + game.love)
+      - name: Generate Android project
         env:
           VERSION_CODE_OVERRIDE: ${{ github.run_number }}
         run: bash scripts/prepare-android-project.sh
@@ -73,7 +74,7 @@ jobs:
           APK=$(find android-project/app/build/outputs/apk -name '*.apk' | head -n 1)
           test -n "$APK"
           mkdir -p dist
-          cp "$APK" "dist/${APK_NAME}-debug.apk"
+          cp "$APK" "dist/${APK_NAME}-build-${{ github.run_number }}.apk"
           ls -lh dist
 
       - name: Upload APK artifact
@@ -83,8 +84,13 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
 
-      - name: Attach APK to release (tag builds only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.APP_NAME }} build ${{ github.run_number }}
+          body: Automatic debug build from commit ${{ env.SHORT_SHA }}
           files: dist/*.apk
+          make_latest: true
