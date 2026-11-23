@@ -1,0 +1,4 @@
+android-project/
+dist/
+*.apk
+.DS_Store
