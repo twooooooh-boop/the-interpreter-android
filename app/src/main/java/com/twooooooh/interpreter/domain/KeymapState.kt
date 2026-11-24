@@ -117,6 +117,21 @@ data class KeymapState(
         return withMap(language, map)
     }
 
+    /**
+     * Replaces whole tables (used by import). A table that equals the built-in one is stored as
+     * "not edited", so the language shows DEFAULT again.
+     */
+    fun importMaps(maps: Map<CipherLanguage, Map<Char, List<String>>>): KeymapState {
+        var next = custom
+        for ((language, table) in maps) {
+            val full = Letters.ALL.associateWith { table[it].orEmpty() }
+            val defaults = DefaultKeys.of(language)
+            val same = Letters.ALL.all { full[it] == defaults[it].orEmpty() }
+            next = if (same) next - language else next + (language to full)
+        }
+        return KeymapState(next)
+    }
+
     fun resetLanguage(language: CipherLanguage): KeymapState =
         if (isCustom(language)) KeymapState(custom - language) else this
 

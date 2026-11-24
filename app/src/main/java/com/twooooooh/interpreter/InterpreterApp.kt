@@ -20,6 +20,6 @@ class InterpreterApp : Application() {
         super.onCreate()
         preferences = PreferencesRepository(this)
         keymaps = KeymapRepository(File(filesDir, "keymap.dat"))
-        saves = SavesRepository(filesDir)
+        saves = SavesRepository(this, preferences)
     }
 }

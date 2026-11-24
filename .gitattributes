@@ -1,0 +1,10 @@
+# Keep the old LÖVE (Lua) version out of GitHub's language statistics
+legacy-love/** linguist-vendored
+# generated from the original Lua tables
+app/src/main/java/com/twooooooh/interpreter/domain/BuiltinMaps.kt linguist-generated
+* text=auto eol=lf
+*.ttf binary
+*.png binary
+*.jar binary
+*.keystore binary
+*.jks binary

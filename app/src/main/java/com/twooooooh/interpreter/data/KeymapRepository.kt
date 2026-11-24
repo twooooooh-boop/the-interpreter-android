@@ -38,6 +38,12 @@ class KeymapRepository(private val file: File) {
     fun clearLetter(language: CipherLanguage, letter: Char) =
         mutate { it.clearLetter(language, letter) }
 
+    fun exportJson(languages: Collection<CipherLanguage>): String =
+        com.twooooooh.interpreter.domain.KeymapJson.export(_state.value, languages)
+
+    fun importMaps(maps: Map<CipherLanguage, Map<Char, List<String>>>) =
+        mutate { it.importMaps(maps) }
+
     /** @return true if the language had edits that were thrown away */
     fun resetLanguage(language: CipherLanguage): Boolean = synchronized(this) {
         val before = _state.value

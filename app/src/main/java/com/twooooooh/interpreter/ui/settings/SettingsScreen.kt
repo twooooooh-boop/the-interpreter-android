@@ -1,5 +1,7 @@
 package com.twooooooh.interpreter.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -32,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,6 +43,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,21 +54,48 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.twooooooh.interpreter.domain.CipherLanguage
+import com.twooooooh.interpreter.domain.KeymapImport
 import com.twooooooh.interpreter.domain.KeymapRules
 import com.twooooooh.interpreter.domain.Letters
 import com.twooooooh.interpreter.ui.KeyChip
 import com.twooooooh.interpreter.ui.LanguageChips
 import com.twooooooh.interpreter.ui.ScreenTitle
 import com.twooooooh.interpreter.ui.theme.KeyTextStyle
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
+    snackbar: SnackbarHostState,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val language by viewModel.language.collectAsStateWithLifecycle()
     val keymap by viewModel.keymap.collectAsStateWithLifecycle()
     var confirmReset by remember { mutableStateOf(false) }
+    var showExportPicker by remember { mutableStateOf(false) }
+    var exportSelection by remember { mutableStateOf<Set<CipherLanguage>>(emptySet()) }
+    val scope = rememberCoroutineScope()
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val ok = viewModel.writeExport(uri, exportSelection)
+                snackbar.showSnackbar(if (ok) "Exported ${exportSelection.size} map(s)" else "Export failed")
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                when (val result = viewModel.readImport(uri)) {
+                    is KeymapImport.Success -> viewModel.offerImport(result)
+                    is KeymapImport.Failure -> snackbar.showSnackbar(result.message)
+                }
+            }
+        }
+    }
 
     val letters = if (viewModel.showUpper) Letters.UPPER else Letters.LOWER
 
@@ -106,6 +138,25 @@ fun SettingsScreen(
             }
         }
 
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = {
+                    exportSelection = CipherLanguage.entries.toSet()
+                    showExportPicker = true
+                },
+                modifier = Modifier.weight(1f),
+            ) { Text("Export JSON") }
+            OutlinedButton(
+                onClick = { importLauncher.launch(arrayOf("*/*")) },
+                modifier = Modifier.weight(1f),
+            ) { Text("Import JSON") }
+        }
+
         Text(
             text = "Tap a letter to choose its keys. A letter can have several keys; all of them decode. " +
                 "The first (green) key is used when encoding.",
@@ -135,6 +186,40 @@ fun SettingsScreen(
             letter = editing,
             keys = keymap.keysFor(language, editing),
             viewModel = viewModel,
+        )
+    }
+
+    if (showExportPicker) {
+        MapPickerDialog(
+            title = "Export maps",
+            confirmLabel = "Export",
+            options = CipherLanguage.entries.map {
+                MapOption(it, if (keymap.isCustom(it)) "edited by you" else "built-in keys")
+            },
+            onConfirm = { chosen ->
+                exportSelection = chosen
+                showExportPicker = false
+                exportLauncher.launch("interpreter-keymaps.json")
+            },
+            onDismiss = { showExportPicker = false },
+        )
+    }
+
+    viewModel.pendingImport?.let { pending ->
+        MapPickerDialog(
+            title = "Import maps",
+            confirmLabel = "Import",
+            options = CipherLanguage.entries.map {
+                MapOption(
+                    language = it,
+                    subtitle = if (it in pending.maps) "in this file" else "not in this file",
+                    enabled = it in pending.maps,
+                )
+            },
+            footer = (listOf("Ticked maps replace the current keys of that language.") + pending.warnings)
+                .joinToString("\n"),
+            onConfirm = { chosen -> viewModel.applyImport(chosen) },
+            onDismiss = viewModel::dismissImport,
         )
     }
 
@@ -331,4 +416,74 @@ private fun KeyEditorSheet(
             }
         }
     }
+}
+
+private data class MapOption(
+    val language: CipherLanguage,
+    val subtitle: String,
+    val enabled: Boolean = true,
+)
+
+/** Dialog with one tick box per map; [onConfirm] gets the ticked ones. */
+@Composable
+private fun MapPickerDialog(
+    title: String,
+    confirmLabel: String,
+    options: List<MapOption>,
+    onConfirm: (Set<CipherLanguage>) -> Unit,
+    onDismiss: () -> Unit,
+    footer: String? = null,
+) {
+    var selected by remember { mutableStateOf(options.filter { it.enabled }.map { it.language }.toSet()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                for (option in options) {
+                    val checked = option.language in selected
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = option.enabled) {
+                                selected = if (checked) selected - option.language else selected + option.language
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = checked,
+                            onCheckedChange = {
+                                selected = if (it) selected + option.language else selected - option.language
+                            },
+                            enabled = option.enabled,
+                        )
+                        Column {
+                            Text(option.language.displayName, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                option.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                if (footer != null) {
+                    Text(
+                        text = footer,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selected) }, enabled = selected.isNotEmpty()) { Text(confirmLabel) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

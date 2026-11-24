@@ -1,8 +1,19 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
+
+// Release signing: environment variables (GitHub secrets) win, otherwise keystore/release.properties.
+val releaseProps = Properties().apply {
+    val file = rootProject.file("keystore/release.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun signingValue(envName: String, propName: String): String? =
+    System.getenv(envName)?.takeIf { it.isNotBlank() } ?: releaseProps.getProperty(propName)
 
 android {
     namespace = "com.twooooooh.interpreter"
@@ -14,14 +25,31 @@ android {
         targetSdk = 35
         // CI passes -PappVersionCode=<run number> so every build can update the previous one.
         versionCode = (findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
-        versionName = "2.0.0"
+        versionName = "2.1.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            signingValue("RELEASE_STORE_FILE", "storeFile")?.let { storeFile = rootProject.file(it) }
+            storePassword = signingValue("RELEASE_STORE_PASSWORD", "storePassword")
+            keyAlias = signingValue("RELEASE_KEY_ALIAS", "keyAlias")
+            keyPassword = signingValue("RELEASE_KEY_PASSWORD", "keyPassword")
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) signingConfig = releaseSigning
         }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     compileOptions {
@@ -54,6 +82,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.documentfile)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)

@@ -1,5 +1,7 @@
 package com.twooooooh.interpreter.ui.interpreter
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +60,24 @@ fun InterpreterScreen(
 
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
+
+    suspend fun saveNow(onNeedFolder: () -> Unit) {
+        when (val outcome = viewModel.save(input)) {
+            is SaveOutcome.Saved -> snackbar.showSnackbar("Saved to ${outcome.where}")
+            SaveOutcome.NeedsFolder -> onNeedFolder()
+            SaveOutcome.Failed -> snackbar.showSnackbar("Could not save. Pick the folder again in the Saves tab.")
+        }
+    }
+
+    // First save (or lost access): ask where sessions should be stored, then save.
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) {
+            scope.launch { snackbar.showSnackbar("No folder chosen - nothing was saved") }
+        } else {
+            viewModel.setSaveFolder(uri)
+            scope.launch { saveNow(onNeedFolder = {}) }
+        }
+    }
 
     val inputLabel = if (mode == Mode.INTERPRET) "INPUT  ·  ENCODED" else "INPUT  ·  NORMAL TEXT"
     val outputLabel = if (mode == Mode.INTERPRET) "OUTPUT  ·  NORMAL TEXT" else "OUTPUT  ·  ENCODED"
@@ -148,12 +168,7 @@ fun InterpreterScreen(
         }
 
         Button(
-            onClick = {
-                scope.launch {
-                    val ok = viewModel.save(input)
-                    snackbar.showSnackbar(if (ok) "Saved — see the Saves tab" else "Could not save")
-                }
-            },
+            onClick = { scope.launch { saveNow { folderLauncher.launch(null) } } },
             enabled = input.isNotBlank(),
             modifier = Modifier
                 .fillMaxWidth()

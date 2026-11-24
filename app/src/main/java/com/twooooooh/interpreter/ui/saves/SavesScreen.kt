@@ -1,6 +1,8 @@
 package com.twooooooh.interpreter.ui.saves
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,13 +39,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.twooooooh.interpreter.ui.ScreenTitle
 import com.twooooooh.interpreter.ui.theme.CipherTextStyle
 import com.twooooooh.interpreter.ui.theme.KeyTextStyle
-import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
@@ -51,11 +56,15 @@ fun SavesScreen(
     modifier: Modifier = Modifier,
     viewModel: SavesViewModel = viewModel(),
 ) {
-    LaunchedEffect(Unit) { viewModel.refresh() }
+    val folder by viewModel.folderUri.collectAsStateWithLifecycle()
+    LaunchedEffect(folder) { viewModel.refresh() }
     BackHandler(enabled = !viewModel.atRoot) { viewModel.up() }
 
-    var pendingDelete by remember { mutableStateOf<File?>(null) }
+    var pendingDelete by remember { mutableStateOf<DocumentFile?>(null) }
     val clipboard = LocalClipboardManager.current
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) viewModel.setFolder(uri)
+    }
 
     Column(
         modifier = modifier
@@ -68,28 +77,63 @@ fun SavesScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
             }
-            ScreenTitle(if (viewModel.atRoot) "Saves" else viewModel.currentDir.name)
+            ScreenTitle(
+                title = if (viewModel.atRoot) "Saves" else viewModel.currentName,
+                modifier = Modifier.weight(1f),
+            ) {
+                if (viewModel.atRoot && folder != null) {
+                    TextButton(onClick = { folderLauncher.launch(null) }) { Text("Change folder") }
+                }
+            }
         }
 
-        if (viewModel.entries.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        if (folder == null) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
                 Text(
-                    text = "Nothing saved yet.\nUse “Save session” on the Interpreter tab.",
+                    text = "Choose where saved sessions go.\nThe app keeps them in a “The Interpreter” folder inside it.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(bottom = 16.dp),
                 )
+                Button(onClick = { folderLauncher.launch(null) }) { Text("Choose folder") }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(viewModel.entries, key = { it.absolutePath }) { file ->
-                    SaveRow(
-                        file = file,
-                        onOpen = { viewModel.open(file) },
-                        onDelete = { pendingDelete = file },
+            if (viewModel.atRoot) {
+                Text(
+                    text = "In: ${viewModel.pickedFolderName ?: "chosen folder"} / The Interpreter",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+            if (viewModel.entries.isEmpty()) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = if (viewModel.loading) "Loading…" else "Nothing saved yet.\nUse “Save session” on the Interpreter tab.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(viewModel.entries, key = { it.uri.toString() }) { file ->
+                        SaveRow(
+                            file = file,
+                            onOpen = { viewModel.open(file) },
+                            onDelete = { pendingDelete = file },
+                        )
+                    }
                 }
             }
         }
@@ -99,7 +143,7 @@ fun SavesScreen(
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text("Delete?") },
-            text = { Text(file.name) },
+            text = { Text(file.name ?: "") },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.delete(file)
@@ -110,10 +154,10 @@ fun SavesScreen(
         )
     }
 
-    viewModel.openedFile?.let { file ->
+    viewModel.openedName?.let { name ->
         AlertDialog(
             onDismissRequest = viewModel::closeFile,
-            title = { Text(file.name, style = MaterialTheme.typography.titleMedium) },
+            title = { Text(name, style = MaterialTheme.typography.titleMedium) },
             text = {
                 Box(
                     Modifier
@@ -134,7 +178,7 @@ fun SavesScreen(
 }
 
 @Composable
-private fun SaveRow(file: File, onOpen: () -> Unit, onDelete: () -> Unit) {
+private fun SaveRow(file: DocumentFile, onOpen: () -> Unit, onDelete: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -147,11 +191,7 @@ private fun SaveRow(file: File, onOpen: () -> Unit, onDelete: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp),
-                contentAlignment = Alignment.Center,
-            ) {
+            Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                 Text(
                     text = if (file.isDirectory) "DIR" else "TXT",
                     style = KeyTextStyle.copy(fontSize = 13.sp),
@@ -159,7 +199,7 @@ private fun SaveRow(file: File, onOpen: () -> Unit, onDelete: () -> Unit) {
                 )
             }
             Column(Modifier.weight(1f)) {
-                Text(file.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                Text(file.name ?: "?", style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                 Text(
                     text = describe(file),
                     style = MaterialTheme.typography.bodySmall,
@@ -173,7 +213,9 @@ private fun SaveRow(file: File, onOpen: () -> Unit, onDelete: () -> Unit) {
     }
 }
 
-private fun describe(file: File): String {
-    val date = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(file.lastModified()))
-    return if (file.isDirectory) "${file.listFiles()?.size ?: 0} files · $date" else "${file.length()} bytes · $date"
+private fun describe(file: DocumentFile): String {
+    val modified = file.lastModified()
+    val date = if (modified > 0) DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(modified)) else ""
+    val size = if (file.isFile) "${file.length()} bytes" else "folder"
+    return listOf(size, date).filter { it.isNotEmpty() }.joinToString(" · ")
 }

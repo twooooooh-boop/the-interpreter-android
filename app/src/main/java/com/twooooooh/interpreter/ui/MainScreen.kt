@@ -64,7 +64,7 @@ fun MainScreen() {
             when (Destination.entries[selected]) {
                 Destination.INTERPRETER -> InterpreterScreen(snackbar)
                 Destination.SAVES -> SavesScreen()
-                Destination.SETTINGS -> SettingsScreen()
+                Destination.SETTINGS -> SettingsScreen(snackbar)
             }
         }
     }

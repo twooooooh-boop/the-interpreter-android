@@ -17,6 +17,15 @@ class PreferencesRepository(context: Context) {
     private val _mode = MutableStateFlow(Mode.fromName(prefs.getString(KEY_MODE, null)))
     val mode: StateFlow<Mode> = _mode.asStateFlow()
 
+    /** Tree URI (as text) of the folder the user picked for saved sessions, or null if none yet. */
+    private val _saveFolder = MutableStateFlow(prefs.getString(KEY_SAVE_FOLDER, null))
+    val saveFolder: StateFlow<String?> = _saveFolder.asStateFlow()
+
+    fun setSaveFolder(value: String?) {
+        _saveFolder.value = value
+        prefs.edit().putString(KEY_SAVE_FOLDER, value).apply()
+    }
+
     fun setLanguage(value: CipherLanguage) {
         _language.value = value
         prefs.edit().putString(KEY_LANGUAGE, value.id).apply()
@@ -30,5 +39,6 @@ class PreferencesRepository(context: Context) {
     private companion object {
         const val KEY_LANGUAGE = "language"
         const val KEY_MODE = "mode"
+        const val KEY_SAVE_FOLDER = "save_folder"
     }
 }
