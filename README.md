@@ -1,45 +1,39 @@
-# The Interpreter (Android)
+# The Interpreter
 
-LÖVE 11.5 app, packaged as an Android project and built by GitHub Actions.
+Native Android app (Kotlin + Jetpack Compose) for the Demon / Ridmik / Blocky ciphers.
 
-- GitHub user: `twooooooh-boop`
-- Repo name: **`the-interpreter-android`** → https://github.com/twooooooh-boop/the-interpreter-android
+- GitHub: `twooooooh-boop/the-interpreter-android`
 - Package id: `com.twooooooh.interpreter`
+- minSdk 24 · compile/target SDK 35 · AGP 8.7.3 · Kotlin 2.0.21 · Gradle 8.9 · JDK 17
 
-All of these names live in `project.env`.
+## Open in Android Studio
+*File ▸ Open* this folder (Android Studio Ladybug or newer). Run the `app` configuration.
 
-## Get the APK from GitHub
-1. Create an **empty** repo `the-interpreter-android` on GitHub (no README/licence).
-2. Unzip this project, then in the folder run `bash scripts/push-to-github.sh`
-   (or: `git init -b main && git add -A && git commit -m init && git remote add origin https://github.com/twooooooh-boop/the-interpreter-android.git && git push -u origin main`).
-3. Open the repo → **Actions** → *Build Android APK* (first build ≈ 15–25 min).
-4. Open the finished run → **Artifacts** → `the-interpreter-android-apk` → unzip → install the APK.
-   Push a tag like `v1.0.1` and the APK is also attached under **Releases**.
+## Build on GitHub
+Every push to `main` runs **Actions ▸ Build Android APK** and publishes a release
+`build-N` with `TheInterpreter-build-N.apk` (source zip / tar.gz are added by GitHub).
+All builds are signed with `keystore/debug.keystore`, so a new build installs over the old one.
 
-Every build uses the same signing key (`android/debug.keystore`), so new builds install over old ones.
+## Project layout
+```
+app/src/main/java/com/twooooooh/interpreter/
+  domain/      pure Kotlin, no Android: maps, key rules, decode/encode  (unit tested)
+  data/        key map storage (keymap.dat), saved sessions, preferences
+  ui/          Compose: theme (fonts/colors), Interpreter, Saves, Settings
+app/src/main/res/font/   Inter + JetBrains Mono (SIL OFL, see licenses/)
+app/src/test/            parity tests against vectors recorded from the original Lua app
+legacy-love/             the previous LÖVE version, kept for reference
+```
 
-## Android Studio
-`bash scripts/prepare-android-project.sh` creates `android-project/` → *File > Open* it
-(or `cd android-project && ./gradlew assembleEmbedNoRecordDebug`).
-Needs JDK 17, Android SDK 34 and NDK 25.2.9519653.
-
-## Test on desktop
-`love game/` (LÖVE 11.5)
-
-## Layout
-- `game/` Lua source (main.lua, modules/, fonts/). `modules/keymap.lua` + `modules/settings.lua` are the new Settings tab.
-- `android/` icon + debug keystore · `scripts/` project generator · `.github/workflows/build.yml`
-- `archive/` your old `8.love`, `safe.love`, `todos.md` (not packaged)
+## What is guaranteed unchanged
+`domain/BuiltinMaps.kt` was generated from the Lua `eldaMaps` (same symbols, same order, same
+"last duplicate wins" behaviour). `domain/Interpreter.kt` is the same decode / encode logic.
+`LuaParityTest` replays ~900 conversions recorded from the Lua code and requires identical output.
 
 ## Settings tab
-Pick a language → tap a letter → type a key → **ADD**. A letter can have up to 8 keys (max 6 characters each).
-All keys of a letter decode; the **PRIMARY** (first, green) key is used when encoding.
-Adding a key that another letter owns moves it. Edits are saved per language; **RESET LANG** restores defaults.
-Keys of several characters are matched longest-first when decoding.
+Pick a language, tap a letter, type a key, **Add**. A letter can have up to 8 keys (max 6
+characters each). All keys decode; the first (green, **PRIMARY**) is used when encoding.
+A key already used by another letter moves to the new one. **Reset** restores a language's built-in keys.
 
-## Changes to your original code (main.lua)
-- 3rd bottom tab **SETTINGS**; maps now come from `Keymap` (cached instead of rebuilt every frame).
-- `decode` does longest-key-first matching (needed for multi-character keys, e.g. Blocky).
-- `encodeNormal` falls back to the other letter case (Ridmik defines symbols once per letter pair).
-- Debug text ("TEXT:/IND:") only shows on the Interpreter tab.
-- Orientation set to portrait (your old APK was landscape); change `ORIENTATION` in `project.env`.
+## Fonts
+UI: Inter · cipher text and keys: JetBrains Mono. Symbols a font lacks fall back to the system font.
