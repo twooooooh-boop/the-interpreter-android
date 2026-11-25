@@ -39,11 +39,16 @@ class InterpreterViewModel(application: Application) : AndroidViewModel(applicat
             val lang = language.value
             val m = mode.value
             val tables = keymap.value.tables(lang)
-            val variants = if (m == Mode.REVERSE) Interpreter.allVariants(input, tables) else emptyList()
-            val plan = if (variants.isNotEmpty()) {
+            val plan = if (m == Mode.REVERSE) {
+                val variants = Interpreter.allVariants(input, tables)
                 SessionPlanner.plan(lang, m, input, variants[0], tables, extraOutputs = variants.drop(1))
             } else {
-                SessionPlanner.plan(lang, m, input, Interpreter.convert(input, m, tables), tables)
+                val styles = Interpreter.allTranscodes(input, tables)
+                SessionPlanner.plan(
+                    lang, m, input, Interpreter.decode(input, tables), tables,
+                    extraOutputs = if (styles.size > 1) styles else emptyList(),
+                    firstExtraKey = 1,
+                )
             }
             val name = app.saves.write(root, plan)
             if (name != null) SaveOutcome.Saved("${app.saves.pickedFolderName() ?: "folder"}/${SavesRepository.ROOT_NAME}/$name")

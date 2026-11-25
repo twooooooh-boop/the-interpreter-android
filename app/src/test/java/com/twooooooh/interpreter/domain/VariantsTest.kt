@@ -72,3 +72,65 @@ class VariantsTest {
         assertEquals("@@zz", plan.files[2].content)
     }
 }
+
+class TranscodeTest {
+    private val demon = CipherLanguage.DEMON
+
+    private fun edited(): CipherTables {
+        var s = KeymapState()
+        s = s.addKey(demon, 'a', "@@").state
+        s = s.addKey(demon, 'a', "Q7").state
+        s = s.addKey(demon, 'b', "zz").state
+        return s.tables(demon)
+    }
+
+    @Test
+    fun interpretModeCanShowTheMessageInEachKeyStyle() {
+        val t = edited()
+        val input = "\u0394zz"                                   // a (key 1) + b (key 2)
+        assertEquals("ab", Interpreter.decode(input, t))
+        assertEquals(3, Interpreter.transcodeCount(input, t))
+        assertEquals(listOf("\u0394\u0431", "@@zz", "Q7\u0431"), Interpreter.allTranscodes(input, t))
+    }
+
+    @Test
+    fun transcodingMatchesEncodingTheDecodedText() {
+        val t = edited()
+        val text = "abc fed ABC"
+        val encoded = Interpreter.encodeVariant(text, t, 1)
+        for (k in 0 until Interpreter.variantCount(text, t)) {
+            assertEquals(Interpreter.encodeVariant(text, t, k), Interpreter.transcodeVariant(encoded, t, k))
+        }
+        assertEquals(text, Interpreter.decode(Interpreter.transcodeMixed(encoded, t, 5L), t))
+    }
+
+    @Test
+    fun unknownSymbolsAndPlainTextSurviveTranscoding() {
+        val t = edited()
+        assertEquals("@@\u00F1 hi!", Interpreter.transcodeVariant("\u0394\u00F1 hi!", t, 1).replace("hi", "hi"))
+        assertEquals(1, Interpreter.transcodeCount("\u00F1\u00F1 123", t))
+    }
+
+    @Test
+    fun tokensCoverTheWholeInputAndMatchDecode() {
+        val t = edited()
+        val input = "\u0394\u00F1 zz(z)\uD83D\uDE00\n"
+        val tokens = Interpreter.tokenize(input, t)
+        var pos = 0
+        for (tok in tokens) { assertEquals(pos, tok.start); pos = tok.end }
+        assertEquals(input.length, pos)
+        val unknown = tokens.count { it.kind == Interpreter.TokenKind.UNKNOWN }
+        assertEquals(2, unknown)                                 // the n-tilde and the emoji
+    }
+
+    @Test
+    fun savedInterpretSessionListsEveryKeyStyle() {
+        val t = edited()
+        val styles = Interpreter.allTranscodes("\u0394zz", t)
+        val plan = SessionPlanner.plan(demon, Mode.INTERPRET, "\u0394zz", "ab", t, java.util.Date(0L), styles, firstExtraKey = 1)
+        assertEquals(
+            listOf("input(DEMON).txt", "output(NORMAL).txt", "output(DEMON)-key1.txt", "output(DEMON)-key2.txt", "output(DEMON)-key3.txt", "MISSING.txt"),
+            plan.files.map { it.name },
+        )
+    }
+}

@@ -11,9 +11,14 @@ package com.twooooooh.interpreter.domain
  */
 object Interpreter {
 
-    fun decode(input: String, tables: CipherTables): String {
-        val out = StringBuilder()
-        val unknown = LinkedHashMap<String, Int>()
+    enum class TokenKind { KEY, PASS, UNKNOWN }
+
+    /** One piece of the input: a key (decodes to [letter]), a plain ASCII char, or an unknown symbol. */
+    class Token(val start: Int, val end: Int, val kind: TokenKind, val letter: String? = null)
+
+    /** Splits [input] exactly the way [decode] reads it (longest key first). */
+    fun tokenize(input: String, tables: CipherTables): List<Token> {
+        val tokens = ArrayList<Token>()
         var i = 0
         val n = input.length
         while (i < n) {
@@ -22,7 +27,7 @@ object Interpreter {
                 if (i + len <= n) {
                     val letter = tables.decodeMap[input.substring(i, i + len)]
                     if (letter != null) {
-                        out.append(letter)
+                        tokens.add(Token(i, i + len, TokenKind.KEY, letter))
                         i += len
                         matched = true
                         break
@@ -32,12 +37,22 @@ object Interpreter {
             if (!matched) {
                 val cp = input.codePointAt(i)
                 val width = Character.charCount(cp)
-                val ch = input.substring(i, i + width)
+                tokens.add(Token(i, i + width, if (isPassThrough(cp)) TokenKind.PASS else TokenKind.UNKNOWN))
                 i += width
-                if (isPassThrough(cp)) {
-                    out.append(ch)
-                } else {
-                    val number = unknown.getOrPut(ch) { unknown.size + 1 }
+            }
+        }
+        return tokens
+    }
+
+    fun decode(input: String, tables: CipherTables): String {
+        val out = StringBuilder()
+        val unknown = LinkedHashMap<String, Int>()
+        for (t in tokenize(input, tables)) {
+            when (t.kind) {
+                TokenKind.KEY -> out.append(t.letter)
+                TokenKind.PASS -> out.append(input, t.start, t.end)
+                TokenKind.UNKNOWN -> {
+                    val number = unknown.getOrPut(input.substring(t.start, t.end)) { unknown.size + 1 }
                     out.append('[').append(number).append(']')
                 }
             }
@@ -95,6 +110,44 @@ object Interpreter {
         for (c in text) {
             val keys = keysOf(c, tables)
             if (keys == null) out.append(c) else out.append(keys[random.nextInt(keys.size)])
+        }
+        return out.toString()
+    }
+
+    // ---- Interpret mode: the same message written in each key style --------------------------
+
+    /** How many key styles the letters of [input] have (the most keys any decoded letter owns, at least 1). */
+    fun transcodeCount(input: String, tables: CipherTables): Int {
+        var most = 1
+        for (t in tokenize(input, tables)) {
+            if (t.kind != TokenKind.KEY) continue
+            val n = tables.keysByLetter[t.letter!![0]]?.size ?: 0
+            if (n > most) most = n
+        }
+        return most
+    }
+
+    /**
+     * Re-writes [input] with the [index]-th key of every letter it contains (0 = first key ...).
+     * Letters with fewer keys use their primary key; unknown symbols and plain characters stay as typed.
+     */
+    fun transcodeVariant(input: String, tables: CipherTables, index: Int): String =
+        transcode(input, tables) { keys -> keys.getOrElse(index) { keys[0] } }
+
+    fun allTranscodes(input: String, tables: CipherTables): List<String> =
+        List(transcodeCount(input, tables)) { transcodeVariant(input, tables, it) }
+
+    /** Every letter gets a random one of its keys. Same [seed] = same result. */
+    fun transcodeMixed(input: String, tables: CipherTables, seed: Long): String {
+        val random = java.util.Random(seed)
+        return transcode(input, tables) { keys -> keys[random.nextInt(keys.size)] }
+    }
+
+    private fun transcode(input: String, tables: CipherTables, pick: (List<String>) -> String): String {
+        val out = StringBuilder()
+        for (t in tokenize(input, tables)) {
+            val keys = if (t.kind == TokenKind.KEY) tables.keysByLetter[t.letter!![0]] else null
+            if (keys != null) out.append(pick(keys)) else out.append(input, t.start, t.end)
         }
         return out.toString()
     }

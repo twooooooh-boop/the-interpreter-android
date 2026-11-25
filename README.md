@@ -48,11 +48,18 @@ Pick a language, tap a letter, type a key, **Add**. A letter can have up to 8 ke
 characters each). All keys decode; the first (green, **PRIMARY**) is used when encoding.
 A key already used by another letter moves to the new one. **Reset** restores a language's built-in keys.
 
-## Several outputs (Reverse mode)
-A letter can own several keys, so normal text has several encodings. The output panel shows
-**Key 1, Key 2, …** (Key *n* uses every letter's *n*-th key, or its primary key if it has fewer),
-**Mixed** (a random key per letter, **Reroll** for another), and **All** (every variant stacked, each with its own Copy).
-Key 1 is always the plain encoding. **Save session** writes `output(LANG).txt` plus `output(LANG)-key2.txt`, `-key3.txt`, …
+## Several outputs (both modes)
+A letter can own several keys, so a message can be written in several **key styles**.
+- **Reverse** (normal → encoded): **Key 1, Key 2, …** — Key *n* uses every letter's *n*-th key (its primary key if it has fewer).
+- **Interpret** (encoded → normal): **Normal** (the decoded text) plus **Key 1, Key 2, …** — the same message re-written in each key style (unknown symbols stay as typed).
+- **Mixed** picks a random key per letter (**Reroll** for another), **All** stacks every output with its own Copy.
+- Key 1 in Reverse is always the plain encoding. **Use as input** sends an output back in as the next input.
+- **Save session** writes `output(LANG).txt` / `output(NORMAL).txt` plus `output(LANG)-keyN.txt` for the extra styles.
+
+## Input area
+Whole screen scrolls (the keyboard never squeezes the panels) · cursor-aware paste / key insert / delete ·
+Interpret mode has a tap-to-type **key bar** with every key of the current map (a–z / A–Z), recognised keys are
+tinted and unreadable symbols are underlined in red with a counter · **Clear** can be undone · character counter.
 
 ## Export / import
 Settings ▸ **Export JSON** lets you tick which maps (Demon / Ridmik / Blocky) go into the file;

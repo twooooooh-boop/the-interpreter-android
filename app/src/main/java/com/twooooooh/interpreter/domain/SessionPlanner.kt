@@ -18,6 +18,7 @@ object SessionPlanner {
         tables: CipherTables,
         now: Date = Date(),
         extraOutputs: List<String> = emptyList(),
+        firstExtraKey: Int = 2,
     ): SessionPlan {
         val lang = language.displayName.uppercase(Locale.ROOT)
         val entryName: String
@@ -35,7 +36,7 @@ object SessionPlanner {
                 SessionFile(inputName, input),
                 SessionFile(outputName, output),
             ) + extraOutputs.mapIndexed { i, text ->
-                SessionFile(outputName.removeSuffix(".txt") + "-key${i + 2}.txt", text)
+                SessionFile("output($lang)-key${i + firstExtraKey}.txt", text)
             } + listOf(
                 SessionFile("MISSING.txt", Interpreter.missingReport(input, tables)),
             ),
