@@ -48,22 +48,24 @@ Pick a language, tap a letter, type a key, **Add**. A letter can have up to 8 ke
 characters each). All keys decode; the first (green, **PRIMARY**) is used when encoding.
 A key already used by another letter moves to the new one. **Reset** restores a language's built-in keys.
 
-## Several outputs (both modes)
-A letter can own several keys, so a message can be written in several **key styles**.
-- **Reverse** (normal → encoded): **Key 1, Key 2, …** — Key *n* uses every letter's *n*-th key (its primary key if it has fewer).
-- **Interpret** (encoded → normal): **Normal** (the decoded text) plus **Key 1, Key 2, …** — the same message re-written in each key style (unknown symbols stay as typed).
-- **Mixed** picks a random key per letter (**Reroll** for another), **All** stacks every output with its own Copy.
-- Key 1 in Reverse is always the plain encoding. **Use as input** sends an output back in as the next input.
-- **Save session** writes `output(LANG).txt` / `output(NORMAL).txt` plus `output(LANG)-keyN.txt` for the extra styles.
+## Interpret mode: word by word
+Decoded text is shown word by word. Under every word whose letters have several keys, the same word
+written with the 2nd, 3rd, … key is shown, faded (three rows are visible, more scroll).
+Chips: **Words** (default) · **Normal** (plain text) · **Key 1, Key 2, …** (the whole message in one key style) · **Mixed** · **All**.
 
-## Input area
-Whole screen scrolls (the keyboard never squeezes the panels) · cursor-aware paste / key insert / delete ·
-Interpret mode has a tap-to-type **key bar** with every key of the current map (a–z / A–Z), recognised keys are
-tinted and unreadable symbols are underlined in red with a counter · **Clear** can be undone · character counter.
+## Reverse mode: one output per key
+**Key 1, Key 2, …** — Key *n* uses every letter's *n*-th key (its primary key if it has fewer), plus **Mixed** (random key per letter, **Reroll**) and **All**.
+Key 1 is always the plain encoding. **Use as input** sends an output back in as the next input.
+**Save session** writes `output(LANG).txt` / `output(NORMAL).txt` plus `output(LANG)-keyN.txt` for the extra styles.
 
-## Export / import
-Settings ▸ **Export JSON** lets you tick which maps (Demon / Ridmik / Blocky) go into the file;
-**Import JSON** reads a file, shows which maps it contains and applies only the ones you tick
+## Layout and input
+Input and output sit **side by side** (switch to *Stacked* with the button next to the title; the choice is remembered).
+Cursor-aware paste / key insert / delete · tap-to-type **key bar** with every key of the current map (Interpret mode) ·
+recognised keys are tinted, unreadable symbols underlined in red with a counter · **Clear** can be undone · character counters.
+
+## Backup / Restore
+Settings ▸ **Backup** lets you tick which maps (Demon / Ridmik / Blocky) go into a `.json` file;
+**Restore** accepts `.json` files only, shows which maps the file contains and applies only the ones you tick
 (they replace that language's current keys). Format: `{"format":"the-interpreter-keymaps","version":1,"maps":{"demon":{"a":["Δ"],…}}}`
 — first key of a letter = primary.
 

@@ -82,7 +82,7 @@ fun SettingsScreen(
         if (uri != null) {
             scope.launch {
                 val ok = viewModel.writeExport(uri, exportSelection)
-                snackbar.showSnackbar(if (ok) "Exported ${exportSelection.size} map(s)" else "Export failed")
+                snackbar.showSnackbar(if (ok) "Backed up ${exportSelection.size} map(s)" else "Backup failed")
             }
         }
     }
@@ -150,11 +150,11 @@ fun SettingsScreen(
                     showExportPicker = true
                 },
                 modifier = Modifier.weight(1f),
-            ) { Text("Export JSON") }
+            ) { Text("Backup") }
             OutlinedButton(
-                onClick = { importLauncher.launch(arrayOf("*/*")) },
+                onClick = { importLauncher.launch(arrayOf("application/json", "text/json")) },
                 modifier = Modifier.weight(1f),
-            ) { Text("Import JSON") }
+            ) { Text("Restore") }
         }
 
         Text(
@@ -191,15 +191,15 @@ fun SettingsScreen(
 
     if (showExportPicker) {
         MapPickerDialog(
-            title = "Export maps",
-            confirmLabel = "Export",
+            title = "Backup maps",
+            confirmLabel = "Backup",
             options = CipherLanguage.entries.map {
                 MapOption(it, if (keymap.isCustom(it)) "edited by you" else "built-in keys")
             },
             onConfirm = { chosen ->
                 exportSelection = chosen
                 showExportPicker = false
-                exportLauncher.launch("interpreter-keymaps.json")
+                exportLauncher.launch("interpreter-backup-" + java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).format(java.util.Date()) + ".json")
             },
             onDismiss = { showExportPicker = false },
         )
@@ -207,8 +207,8 @@ fun SettingsScreen(
 
     viewModel.pendingImport?.let { pending ->
         MapPickerDialog(
-            title = "Import maps",
-            confirmLabel = "Import",
+            title = "Restore maps",
+            confirmLabel = "Restore",
             options = CipherLanguage.entries.map {
                 MapOption(
                     language = it,

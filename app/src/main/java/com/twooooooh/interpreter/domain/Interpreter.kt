@@ -152,6 +152,69 @@ object Interpreter {
         return out.toString()
     }
 
+    // ---- Interpret mode: word by word ("interlinear") reading ------------------------------------
+
+    /**
+     * One word of the input: how it was typed, what it decodes to, and the same word written with
+     * the 2nd, 3rd, ... key of its letters ([alternates], empty when no letter of it has several keys).
+     */
+    class WordReading(val encoded: String, val decoded: String, val alternates: List<String>)
+
+    /** The words of the input, split into the lines of the input. */
+    class WordLayout(val lines: List<List<WordReading>>, val truncated: Boolean)
+
+    /**
+     * Reads [input] word by word. Words are split at spaces / tabs / new lines; the decoded words,
+     * put back together, give the same text as [decode] (unknown symbols are numbered over the whole text).
+     * At most [maxWords] words are analysed, so a huge text cannot freeze the screen.
+     */
+    fun readWords(input: String, tables: CipherTables, maxWords: Int = 400): WordLayout {
+        val unknown = LinkedHashMap<String, Int>()
+        val lines = ArrayList<List<WordReading>>()
+        var current = ArrayList<WordReading>()
+        val decoded = StringBuilder()
+        var wordStart = -1
+        var wordEnd = -1
+        var count = 0
+        var truncated = false
+
+        fun flush(): Boolean {                       // false when the word limit is reached
+            if (wordStart < 0) return true
+            if (count >= maxWords) { truncated = true; return false }
+            val encoded = input.substring(wordStart, wordEnd)
+            val styles = transcodeCount(encoded, tables)
+            val alternates = if (styles > 1) List(styles - 1) { transcodeVariant(encoded, tables, it + 1) } else emptyList()
+            current.add(WordReading(encoded, decoded.toString(), alternates))
+            count++
+            wordStart = -1
+            decoded.setLength(0)
+            return true
+        }
+
+        for (t in tokenize(input, tables)) {
+            val ch = input[t.start]
+            val separator = t.kind == TokenKind.PASS && (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')
+            if (separator) {
+                if (!flush()) break
+                if (ch == '\n') { lines.add(current); current = ArrayList() }
+            } else {
+                if (wordStart < 0) wordStart = t.start
+                wordEnd = t.end
+                when (t.kind) {
+                    TokenKind.KEY -> decoded.append(t.letter)
+                    TokenKind.PASS -> decoded.append(input, t.start, t.end)
+                    TokenKind.UNKNOWN -> {
+                        val number = unknown.getOrPut(input.substring(t.start, t.end)) { unknown.size + 1 }
+                        decoded.append('[').append(number).append(']')
+                    }
+                }
+            }
+        }
+        if (!truncated) flush()
+        lines.add(current)
+        return WordLayout(lines, truncated)
+    }
+
     fun convert(input: String, mode: Mode, tables: CipherTables): String =
         if (mode == Mode.INTERPRET) decode(input, tables) else encode(input, tables)
 

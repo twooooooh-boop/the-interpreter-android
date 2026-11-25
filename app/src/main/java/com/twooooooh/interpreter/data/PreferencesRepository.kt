@@ -26,6 +26,15 @@ class PreferencesRepository(context: Context) {
         prefs.edit().putString(KEY_SAVE_FOLDER, value).apply()
     }
 
+    /** true = input and output side by side, false = stacked. */
+    private val _splitLayout = MutableStateFlow(prefs.getBoolean(KEY_SPLIT, true))
+    val splitLayout: StateFlow<Boolean> = _splitLayout.asStateFlow()
+
+    fun setSplitLayout(value: Boolean) {
+        _splitLayout.value = value
+        prefs.edit().putBoolean(KEY_SPLIT, value).apply()
+    }
+
     fun setLanguage(value: CipherLanguage) {
         _language.value = value
         prefs.edit().putString(KEY_LANGUAGE, value.id).apply()
@@ -39,6 +48,7 @@ class PreferencesRepository(context: Context) {
     private companion object {
         const val KEY_LANGUAGE = "language"
         const val KEY_MODE = "mode"
+        const val KEY_SPLIT = "split_layout"
         const val KEY_SAVE_FOLDER = "save_folder"
     }
 }

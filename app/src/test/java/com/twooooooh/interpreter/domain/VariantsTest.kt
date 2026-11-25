@@ -134,3 +134,50 @@ class TranscodeTest {
         )
     }
 }
+
+class WordReadingTest {
+    private val demon = CipherLanguage.DEMON
+
+    private fun edited(): CipherTables {
+        var s = KeymapState()
+        s = s.addKey(demon, 'a', "@@").state
+        s = s.addKey(demon, 'a', "Q7").state
+        s = s.addKey(demon, 'b', "zz").state
+        return s.tables(demon)
+    }
+
+    @Test
+    fun everyWordShowsItsOtherKeyStyles() {
+        val t = edited()
+        val layout = Interpreter.readWords("\u0394zz \u0394 \u0434", t)
+        val words = layout.lines.single()
+        assertEquals(listOf("ab", "a", "d"), words.map { it.decoded })
+        assertEquals(listOf("@@zz", "Q7\u0431"), words[0].alternates)       // 2nd and 3rd style
+        assertEquals(listOf("@@", "Q7"), words[1].alternates)
+        assertTrue(words[2].alternates.isEmpty())                            // d has a single key
+    }
+
+    @Test
+    fun wordsPutBackTogetherEqualTheNormalDecode() {
+        val t = edited()
+        val input = "\u0394zz \u00F1 \u0434\n\n\u0394\u00F1 q  \u65E5"
+        val layout = Interpreter.readWords(input, t)
+        assertEquals(3, layout.lines.size)                                   // the empty line stays an (empty) line
+        assertTrue(layout.lines[1].isEmpty())
+        val joined = layout.lines.joinToString("\n") { line -> line.joinToString(" ") { it.decoded } }
+        assertEquals(Interpreter.decode(input.replace("  ", " "), t), joined)
+        // unknown symbols are numbered over the whole text, not per word
+        assertEquals("[1]", layout.lines[0][1].decoded)
+        assertEquals("a[1]", layout.lines[2][0].decoded)
+        assertEquals("[2]", layout.lines[2][2].decoded)
+    }
+
+    @Test
+    fun hugeTextsAreCutOff() {
+        val t = edited()
+        val layout = Interpreter.readWords("\u0394 ".repeat(1000), t, maxWords = 50)
+        assertTrue(layout.truncated)
+        assertEquals(50, layout.lines.sumOf { it.size })
+        assertTrue(!Interpreter.readWords("\u0394 \u0394", t).truncated)
+    }
+}

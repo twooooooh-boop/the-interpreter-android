@@ -8,13 +8,19 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -51,6 +57,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.OffsetMapping
@@ -58,7 +65,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.twooooooh.interpreter.domain.CipherLanguage
@@ -74,12 +83,14 @@ import com.twooooooh.interpreter.ui.theme.KeyTextStyle
 import kotlinx.coroutines.launch
 
 // Which output is shown: a key index (0, 1, 2 …) or one of these special views.
-private const val VIEW_NORMAL = -3
+private const val VIEW_WORDS = -4    // Interpret: word by word, with the other key styles faded underneath
+private const val VIEW_NORMAL = -3   // Interpret: plain decoded text
 private const val VIEW_ALL = -2
 private const val VIEW_MIXED = -1
 
 private data class ViewChip(val view: Int, val label: String)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun InterpreterScreen(
     snackbar: SnackbarHostState,
@@ -89,11 +100,14 @@ fun InterpreterScreen(
     val language by viewModel.language.collectAsStateWithLifecycle()
     val mode by viewModel.mode.collectAsStateWithLifecycle()
     val keymap by viewModel.keymap.collectAsStateWithLifecycle()
+    val split by viewModel.splitLayout.collectAsStateWithLifecycle()
     val interpret = mode == Mode.INTERPRET
+    val imeVisible = WindowInsets.isImeVisible
 
     var field by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
     val input = field.text
     val tables = remember(keymap, language) { keymap.tables(language) }
+    val textStyle = if (split) CipherTextStyle.copy(fontSize = 16.sp, lineHeight = 24.sp) else CipherTextStyle
 
     // Interpret: normal text + the message written in each key style. Reverse: one output per key.
     val keyOutputs = remember(input, mode, tables) {
@@ -102,16 +116,19 @@ fun InterpreterScreen(
     val normalText = remember(input, mode, tables) { if (interpret) Interpreter.decode(input, tables) else "" }
     val multi = keyOutputs.size > 1
 
-    var selection by rememberSaveable(mode) { mutableStateOf(if (interpret) VIEW_NORMAL else 0) }
+    var selection by rememberSaveable(mode) { mutableStateOf(if (interpret) VIEW_WORDS else 0) }
     var mixSeed by rememberSaveable { mutableStateOf(1L) }
-    val defaultView = if (interpret) VIEW_NORMAL else 0
+    val defaultView = if (interpret) VIEW_WORDS else 0
     val view = when {
-        !multi -> defaultView
+        !multi -> if (interpret) VIEW_NORMAL else 0
         selection >= keyOutputs.size -> defaultView
-        selection == VIEW_NORMAL && !interpret -> 0
+        !interpret && (selection == VIEW_NORMAL || selection == VIEW_WORDS) -> 0
         else -> selection
     }
 
+    val wordLayout = remember(input, tables, view, interpret) {
+        if (interpret && view == VIEW_WORDS) Interpreter.readWords(input, tables) else null
+    }
     val mixed = remember(input, tables, mixSeed, multi, interpret) {
         when {
             !multi -> ""
@@ -126,7 +143,7 @@ fun InterpreterScreen(
         }
     }
     val output = when (view) {
-        VIEW_NORMAL -> normalText
+        VIEW_WORDS, VIEW_NORMAL -> normalText
         VIEW_MIXED -> mixed
         VIEW_ALL -> cards.joinToString("\n\n") { it.second }
         else -> keyOutputs.getOrElse(view) { "" }
@@ -134,19 +151,26 @@ fun InterpreterScreen(
 
     val chips = remember(multi, interpret, keyOutputs.size) {
         if (!multi) emptyList<ViewChip>() else buildList<ViewChip> {
-            if (interpret) add(ViewChip(VIEW_NORMAL, "Normal"))
+            if (interpret) {
+                add(ViewChip(VIEW_WORDS, "Words"))
+                add(ViewChip(VIEW_NORMAL, "Normal"))
+            }
             for (i in keyOutputs.indices) add(ViewChip(i, "Key ${i + 1}"))
             add(ViewChip(VIEW_MIXED, "Mixed"))
             add(ViewChip(VIEW_ALL, "All"))
         }
     }
     val outputLabel = when {
+        view == VIEW_WORDS -> "OUTPUT  ·  WORDS"
         view == VIEW_NORMAL -> "OUTPUT  ·  NORMAL TEXT"
         view == VIEW_ALL -> "OUTPUT  ·  ALL ${cards.size}"
         view == VIEW_MIXED -> "OUTPUT  ·  MIXED KEYS"
         interpret -> "OUTPUT  ·  KEY ${view + 1} STYLE"
-        multi -> "OUTPUT  ·  ENCODED  ·  KEY ${view + 1} OF ${keyOutputs.size}"
         else -> "OUTPUT  ·  ENCODED"
+    }
+    val outputDetail = buildString {
+        append(output.length).append(" chars")
+        if (!interpret && multi && view >= 0) append("  ·  key ${view + 1} of ${keyOutputs.size}")
     }
 
     val clipboard = LocalClipboardManager.current
@@ -198,38 +222,8 @@ fun InterpreterScreen(
         }
     }
 
-    // ---- layout: the whole screen scrolls, so the keyboard never squeezes the panels ---------
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        ScreenTitle("Interpreter")
-
-        LanguageChips(selected = language, onSelect = viewModel::setLanguage)
-
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = interpret,
-                    onClick = { viewModel.setMode(Mode.INTERPRET) },
-                    label = { Text("Interpret") },
-                )
-                FilterChip(
-                    selected = !interpret,
-                    onClick = { viewModel.setMode(Mode.REVERSE) },
-                    label = { Text("Reverse") },
-                )
-            }
-            Text(
-                text = if (interpret) "Encoded  →  normal text" else "Normal text  →  encoded",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
+    // ---- the two panes (used by both layouts) ------------------------------------------------
+    val inputPane: @Composable (Modifier, Boolean) -> Unit = { paneModifier, fill ->
         InputPanel(
             interpret = interpret,
             value = field,
@@ -237,19 +231,28 @@ fun InterpreterScreen(
             tables = tables,
             language = language,
             keymap = keymap,
+            textStyle = textStyle,
+            fill = fill,
+            showPalette = !split && interpret,
             onPaste = { clipboard.getText()?.text?.let { insertText(it) } },
             onClear = { clearWithUndo() },
             onInsert = { insertText(it) },
             onBackspace = { backspace() },
+            modifier = paneModifier,
         )
-
+    }
+    val outputPane: @Composable (Modifier, Boolean) -> Unit = { paneModifier, fill ->
         OutputPanel(
             label = outputLabel,
+            detail = outputDetail,
             chips = chips,
             view = view,
             onSelectView = { selection = it },
             output = output,
+            wordLayout = wordLayout,
             cards = cards,
+            textStyle = textStyle,
+            fill = fill,
             canUseAsInput = output.isNotEmpty() && view != VIEW_ALL,
             onCopy = { text, message ->
                 clipboard.setText(AnnotatedString(text))
@@ -259,18 +262,118 @@ fun InterpreterScreen(
             onUseAsInput = {
                 val text = output
                 // decoded normal text goes back in as Reverse input; encoded output goes in as Interpret input
-                viewModel.setMode(if (interpret && view == VIEW_NORMAL) Mode.REVERSE else Mode.INTERPRET)
+                val decodedView = interpret && (view == VIEW_NORMAL || view == VIEW_WORDS)
+                viewModel.setMode(if (decodedView) Mode.REVERSE else Mode.INTERPRET)
                 field = TextFieldValue(text, TextRange(text.length))
             },
+            modifier = paneModifier,
         )
-
+    }
+    val layoutToggle: @Composable () -> Unit = {
+        TextButton(onClick = { viewModel.setSplitLayout(!split) }) { Text(if (split) "Stacked" else "Side by side") }
+    }
+    val saveButton: @Composable () -> Unit = {
         Button(
             onClick = { scope.launch { saveNow { folderLauncher.launch(null) } } },
             enabled = input.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Save session") }
+    }
 
-        Spacer(Modifier.height(8.dp))
+    if (split) {
+        // Input on the left, output on the right: the panes fill the screen, each scrolls inside.
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ScreenTitle("Interpreter", trailing = layoutToggle)
+
+            if (!imeVisible) {
+                LanguageChips(selected = language, onSelect = viewModel::setLanguage)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = interpret,
+                        onClick = { viewModel.setMode(Mode.INTERPRET) },
+                        label = { Text("Interpret  ·  encoded → normal") },
+                    )
+                    FilterChip(
+                        selected = !interpret,
+                        onClick = { viewModel.setMode(Mode.REVERSE) },
+                        label = { Text("Reverse") },
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                inputPane(Modifier.weight(1f).fillMaxHeight(), true)
+                outputPane(Modifier.weight(1f).fillMaxHeight(), true)
+            }
+
+            if (interpret) {
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    KeyPalette(
+                        language = language,
+                        keymap = keymap,
+                        onInsert = { insertText(it) },
+                        onBackspace = { backspace() },
+                    )
+                }
+            }
+
+            if (!imeVisible) {
+                saveButton()
+                Spacer(Modifier.height(4.dp))
+            }
+        }
+    } else {
+        // Stacked: the whole screen scrolls, so the keyboard never squeezes the panels.
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ScreenTitle("Interpreter", trailing = layoutToggle)
+
+            LanguageChips(selected = language, onSelect = viewModel::setLanguage)
+
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = interpret,
+                        onClick = { viewModel.setMode(Mode.INTERPRET) },
+                        label = { Text("Interpret") },
+                    )
+                    FilterChip(
+                        selected = !interpret,
+                        onClick = { viewModel.setMode(Mode.REVERSE) },
+                        label = { Text("Reverse") },
+                    )
+                }
+                Text(
+                    text = if (interpret) "Encoded  →  normal text" else "Normal text  →  encoded",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            inputPane(Modifier.fillMaxWidth(), false)
+            outputPane(Modifier.fillMaxWidth(), false)
+            saveButton()
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
@@ -286,10 +389,14 @@ private fun InputPanel(
     tables: CipherTables,
     language: CipherLanguage,
     keymap: KeymapState,
+    textStyle: TextStyle,
+    fill: Boolean,
+    showPalette: Boolean,
     onPaste: () -> Unit,
     onClear: () -> Unit,
     onInsert: (String) -> Unit,
     onBackspace: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -308,7 +415,7 @@ private fun InputPanel(
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
     ) {
         Column {
             PanelHeader(
@@ -329,9 +436,8 @@ private fun InputPanel(
 
             // The whole area is tappable, not just the text.
             Box(
-                modifier = Modifier
+                modifier = (if (fill) Modifier.weight(1f) else Modifier.heightIn(min = 120.dp, max = 260.dp))
                     .fillMaxWidth()
-                    .heightIn(min = 120.dp, max = 260.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -339,12 +445,12 @@ private fun InputPanel(
                         focusRequester.requestFocus()
                         keyboard?.show()
                     }
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
             ) {
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
-                    textStyle = CipherTextStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+                    textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.None,
@@ -358,8 +464,8 @@ private fun InputPanel(
                         Box(Modifier.fillMaxWidth()) {
                             if (value.text.isEmpty()) {
                                 Text(
-                                    text = if (interpret) "Type with the key bar below, or paste encoded text…" else "Type normal text…",
-                                    style = CipherTextStyle,
+                                    text = if (interpret) "Type with the keys below, or paste encoded text…" else "Type normal text…",
+                                    style = textStyle,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -369,7 +475,7 @@ private fun InputPanel(
                 )
             }
 
-            if (interpret) {
+            if (showPalette) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 KeyPalette(
                     language = language,
@@ -498,23 +604,28 @@ private fun KeyButton(key: String, letter: Char, onClick: () -> Unit) {
 @Composable
 private fun OutputPanel(
     label: String,
+    detail: String,
     chips: List<ViewChip>,
     view: Int,
     onSelectView: (Int) -> Unit,
     output: String,
+    wordLayout: Interpreter.WordLayout?,
     cards: List<Pair<String, String>>,
+    textStyle: TextStyle,
+    fill: Boolean,
     canUseAsInput: Boolean,
     onCopy: (text: String, message: String) -> Unit,
     onReroll: () -> Unit,
     onUseAsInput: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
     ) {
-        Column(Modifier.padding(bottom = 12.dp)) {
-            PanelHeader(label = label, detail = "${output.length} chars") {
+        Column(Modifier.padding(bottom = 8.dp)) {
+            PanelHeader(label = label, detail = detail) {
                 if (view == VIEW_MIXED) {
                     TextButton(onClick = onReroll, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("Reroll") }
                 }
@@ -537,7 +648,7 @@ private fun OutputPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                        .padding(start = 12.dp, end = 12.dp, bottom = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     for (chip in chips) {
@@ -550,33 +661,104 @@ private fun OutputPanel(
                 }
             }
 
-            if (view == VIEW_ALL) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp, max = 420.dp)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    for ((title, text) in cards) {
-                        OutputCard(title = title, text = text, onCopy = { onCopy(text, "Copied ${title.lowercase()}") })
+            val areaModifier = (if (fill) Modifier.weight(1f) else Modifier.heightIn(min = 120.dp, max = 360.dp))
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp)
+
+            when {
+                view == VIEW_WORDS && wordLayout != null -> {
+                    InterlinearView(layout = wordLayout, textStyle = textStyle, modifier = areaModifier)
+                }
+                view == VIEW_ALL -> {
+                    Column(modifier = areaModifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for ((title, text) in cards) {
+                            OutputCard(
+                                title = title,
+                                text = text,
+                                textStyle = textStyle,
+                                onCopy = { onCopy(text, "Copied ${title.lowercase()}") },
+                            )
+                        }
                     }
                 }
+                else -> {
+                    Box(modifier = areaModifier) {
+                        SelectionContainer {
+                            Text(
+                                text = output,
+                                style = textStyle,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Word by word: every word shows what it decodes to; underneath, faded, the same word written with
+ * the 2nd, 3rd, … key of its letters. At most three of those rows show, the rest scrolls.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun InterlinearView(
+    layout: Interpreter.WordLayout,
+    textStyle: TextStyle,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        for (line in layout.lines) {
+            if (line.isEmpty()) {
+                Spacer(Modifier.height(6.dp))
             } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp, max = 320.dp)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp),
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    SelectionContainer {
+                    for (word in line) WordColumn(word = word, textStyle = textStyle)
+                }
+            }
+        }
+        if (layout.truncated) {
+            Text(
+                text = "Only the first words are shown here. Use Normal for the whole text.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WordColumn(word: Interpreter.WordReading, textStyle: TextStyle) {
+    val faded = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+    val fadedLabel = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+    Column {
+        Text(text = word.decoded, style = textStyle, color = MaterialTheme.colorScheme.tertiary)
+        if (word.alternates.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 66.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                word.alternates.forEachIndexed { i, alternate ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         Text(
-                            text = output,
-                            style = CipherTextStyle,
-                            color = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.fillMaxWidth(),
+                            text = ordinal(i + 2),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = fadedLabel,
+                        )
+                        Text(
+                            text = alternate,
+                            style = KeyTextStyle.copy(fontSize = 13.sp, lineHeight = 20.sp),
+                            color = faded,
                         )
                     }
                 }
@@ -585,9 +767,15 @@ private fun OutputPanel(
     }
 }
 
+private fun ordinal(n: Int): String = when (n) {
+    2 -> "2nd"
+    3 -> "3rd"
+    else -> "${n}th"
+}
+
 /** One output with its own copy button (used by the "All" view). */
 @Composable
-private fun OutputCard(title: String, text: String, onCopy: () -> Unit) {
+private fun OutputCard(title: String, text: String, textStyle: TextStyle, onCopy: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -609,7 +797,7 @@ private fun OutputCard(title: String, text: String, onCopy: () -> Unit) {
             SelectionContainer {
                 Text(
                     text = text,
-                    style = CipherTextStyle,
+                    style = textStyle,
                     color = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.padding(end = 8.dp),
                 )
@@ -618,32 +806,37 @@ private fun OutputCard(title: String, text: String, onCopy: () -> Unit) {
     }
 }
 
-/** Small label on the left, a counter in the middle and actions on the right. */
+/** Label and counter on top, the actions underneath (they scroll sideways in a narrow pane). */
 @Composable
 private fun PanelHeader(
     label: String,
     detail: String,
     detailIsWarning: Boolean = false,
-    actions: @Composable () -> Unit,
+    actions: @Composable RowScope.() -> Unit,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 4.dp, top = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(start = 12.dp, end = 4.dp, top = 8.dp),
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = detail,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (detailIsWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        actions()
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = detail,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (detailIsWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            content = actions,
+        )
     }
 }

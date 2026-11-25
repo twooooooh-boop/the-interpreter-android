@@ -2,6 +2,7 @@ package com.twooooooh.interpreter.ui.settings
 
 import android.app.Application
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -35,7 +36,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     var pendingImport by mutableStateOf<KeymapImport.Success?>(null)
         private set
 
-    /** Writes the ticked maps as JSON to [uri]. */
+    /** Writes the ticked maps as a JSON backup to [uri]. */
     suspend fun writeExport(uri: Uri, languages: Set<CipherLanguage>): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val bytes = app.keymaps.exportJson(languages).toByteArray(Charsets.UTF_8)
@@ -43,8 +44,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }.isSuccess
     }
 
-    /** Reads and checks a JSON file. A good result is kept in [pendingImport]. */
+    /** Reads and checks a JSON backup file. A good result is kept in [pendingImport]. */
     suspend fun readImport(uri: Uri): KeymapImport = withContext(Dispatchers.IO) {
+        // Only .json backup files are accepted.
+        val fileName = runCatching {
+            app.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            }
+        }.getOrNull()
+        if (fileName != null && !fileName.endsWith(".json", ignoreCase = true)) {
+            return@withContext KeymapImport.Failure("Only .json backup files can be restored")
+        }
         val result: KeymapImport = runCatching<KeymapImport> {
             val out = ByteArrayOutputStream()
             app.contentResolver.openInputStream(uri)!!.use { input ->

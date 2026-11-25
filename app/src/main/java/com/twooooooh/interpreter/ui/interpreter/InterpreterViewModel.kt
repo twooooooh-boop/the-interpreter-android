@@ -26,9 +26,11 @@ class InterpreterViewModel(application: Application) : AndroidViewModel(applicat
     val language: StateFlow<CipherLanguage> = app.preferences.language
     val mode: StateFlow<Mode> = app.preferences.mode
     val keymap = app.keymaps.state
+    val splitLayout: StateFlow<Boolean> = app.preferences.splitLayout
 
     fun setLanguage(value: CipherLanguage) = app.preferences.setLanguage(value)
     fun setMode(value: Mode) = app.preferences.setMode(value)
+    fun setSplitLayout(value: Boolean) = app.preferences.setSplitLayout(value)
 
     fun setSaveFolder(uri: Uri) = app.saves.setFolder(uri)
 

@@ -25,7 +25,7 @@ android {
         targetSdk = 35
         // CI passes -PappVersionCode=<run number> so every build can update the previous one.
         versionCode = (findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
-        versionName = "2.3.0"
+        versionName = "2.4.0"
     }
 
     signingConfigs {
