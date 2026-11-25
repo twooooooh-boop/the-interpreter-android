@@ -3,7 +3,7 @@
 Native Android app (Kotlin + Jetpack Compose) for the Demon / Ridmik / Blocky ciphers.
 
 - GitHub: `twooooooh-boop/the-interpreter-android`
-- Package id: `com.twooooooh.interpreter`
+- Package id: `com.twooooooh.theinterpreter` (code namespace stays `com.twooooooh.interpreter`)
 - minSdk 24 · compile/target SDK 35 · AGP 8.7.3 · Kotlin 2.0.21 · Gradle 8.9 · JDK 17
 
 ## Open in Android Studio
@@ -47,6 +47,12 @@ legacy-love/             the previous LÖVE version, kept for reference
 Pick a language, tap a letter, type a key, **Add**. A letter can have up to 8 keys (max 6
 characters each). All keys decode; the first (green, **PRIMARY**) is used when encoding.
 A key already used by another letter moves to the new one. **Reset** restores a language's built-in keys.
+
+## Several outputs (Reverse mode)
+A letter can own several keys, so normal text has several encodings. The output panel shows
+**Key 1, Key 2, …** (Key *n* uses every letter's *n*-th key, or its primary key if it has fewer),
+**Mixed** (a random key per letter, **Reroll** for another), and **All** (every variant stacked, each with its own Copy).
+Key 1 is always the plain encoding. **Save session** writes `output(LANG).txt` plus `output(LANG)-key2.txt`, `-key3.txt`, …
 
 ## Export / import
 Settings ▸ **Export JSON** lets you tick which maps (Demon / Ridmik / Blocky) go into the file;

@@ -17,6 +17,7 @@ object SessionPlanner {
         output: String,
         tables: CipherTables,
         now: Date = Date(),
+        extraOutputs: List<String> = emptyList(),
     ): SessionPlan {
         val lang = language.displayName.uppercase(Locale.ROOT)
         val entryName: String
@@ -33,6 +34,9 @@ object SessionPlanner {
             files = listOf(
                 SessionFile(inputName, input),
                 SessionFile(outputName, output),
+            ) + extraOutputs.mapIndexed { i, text ->
+                SessionFile(outputName.removeSuffix(".txt") + "-key${i + 2}.txt", text)
+            } + listOf(
                 SessionFile("MISSING.txt", Interpreter.missingReport(input, tables)),
             ),
         )

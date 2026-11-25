@@ -62,14 +62,16 @@ data class KeymapState(
         val decode = HashMap<String, String>()
         val encode = HashMap<Char, String>()
         val lengths = HashSet<Int>()
+        val byLetter = HashMap<Char, List<String>>()
         for ((letter, keys) in source(language)) {
+            if (keys.isNotEmpty()) byLetter[letter] = keys
             keys.forEachIndexed { index, key ->
                 decode[key] = letter.toString()
                 if (index == 0) encode[letter] = key
                 lengths.add(key.length)
             }
         }
-        return CipherTables(decode, encode, lengths.sortedDescending())
+        return CipherTables(decode, encode, lengths.sortedDescending(), byLetter)
     }
 
     // ---- edits (each returns a new state) -----------------------------------------------

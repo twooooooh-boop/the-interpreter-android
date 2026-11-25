@@ -56,6 +56,49 @@ object Interpreter {
         return out.toString()
     }
 
+    // ---- several outputs: one per key a letter owns --------------------------------------------
+
+    /** Keys that can stand for [c] (same lookup order as [encode]: exact case, lower, upper). */
+    private fun keysOf(c: Char, tables: CipherTables): List<String>? =
+        tables.keysByLetter[c] ?: tables.keysByLetter[asciiLower(c)] ?: tables.keysByLetter[asciiUpper(c)]
+
+    /** How many different encodings [text] has: the most keys any of its letters owns (at least 1). */
+    fun variantCount(text: String, tables: CipherTables): Int {
+        var most = 1
+        for (c in text) {
+            val n = keysOf(c, tables)?.size ?: 0
+            if (n > most) most = n
+        }
+        return most
+    }
+
+    /**
+     * Encoding number [index] (0 = every letter's first key, 1 = second key, ...).
+     * A letter that has fewer keys uses its primary key, so variant 0 equals [encode].
+     */
+    fun encodeVariant(text: String, tables: CipherTables, index: Int): String {
+        val out = StringBuilder()
+        for (c in text) {
+            val keys = keysOf(c, tables)
+            if (keys == null) out.append(c) else out.append(keys.getOrElse(index) { keys[0] })
+        }
+        return out.toString()
+    }
+
+    fun allVariants(text: String, tables: CipherTables): List<String> =
+        List(variantCount(text, tables)) { encodeVariant(text, tables, it) }
+
+    /** Every letter gets a random one of its keys. Same [seed] = same result. */
+    fun encodeMixed(text: String, tables: CipherTables, seed: Long): String {
+        val random = java.util.Random(seed)
+        val out = StringBuilder()
+        for (c in text) {
+            val keys = keysOf(c, tables)
+            if (keys == null) out.append(c) else out.append(keys[random.nextInt(keys.size)])
+        }
+        return out.toString()
+    }
+
     fun convert(input: String, mode: Mode, tables: CipherTables): String =
         if (mode == Mode.INTERPRET) decode(input, tables) else encode(input, tables)
 

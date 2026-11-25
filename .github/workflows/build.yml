@@ -13,6 +13,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      errors: ${{ steps.errs.outputs.errors }}
 
     steps:
       - name: Checkout
@@ -28,6 +30,14 @@ jobs:
             echo "NTFY_TOPIC=$NTFY_TOPIC"
             echo "SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)"
           } >> "$GITHUB_ENV"
+
+      - name: Notify - started
+        if: github.event_name != 'pull_request'
+        run: |
+          curl -sS -o /dev/null -w "ntfy HTTP %{http_code}\n" -X POST \
+            -H "Title: ${APP_NAME} build ${{ github.run_number }} started" \
+            -H "Tags: hourglass_flowing_sand" -H "Priority: low" \
+            -d "Building commit ${SHORT_SHA}" "https://ntfy.sh/${NTFY_TOPIC}" || true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -108,22 +118,45 @@ jobs:
           files: dist/*.apk
           make_latest: true
 
-      - name: Notify - success
-        if: success() && github.event_name != 'pull_request'
-        run: |
-          curl -s -H "Title: ${APP_NAME} build ${{ github.run_number }} succeeded" \
-            -H "Tags: white_check_mark" \
-            -H "Click: https://github.com/${{ github.repository }}/releases" \
-            -d "Tap to open the release" "https://ntfy.sh/${NTFY_TOPIC}" || true
-
-      - name: Notify - failure
+      - name: Collect error lines
+        id: errs
         if: failure()
         run: |
           LINES=""
           if [ -f build.log ]; then
-            LINES=$(grep -E -A2 "FAILURE:|What went wrong|error:|^e: " build.log | head -12)
+            LINES=$(grep -E -A2 "FAILURE:|What went wrong|error:|^e: " build.log | head -12 || true)
           fi
-          curl -s -H "Title: ${APP_NAME} build ${{ github.run_number }} FAILED" \
-            -H "Priority: high" -H "Tags: x" \
-            -H "Click: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            -d "${LINES:-Open the run for details}" "https://ntfy.sh/${NTFY_TOPIC}" || true
+          {
+            echo "errors<<EOF_ERRORS"
+            echo "${LINES:-No build log. Open the run for details.}"
+            echo "EOF_ERRORS"
+          } >> "$GITHUB_OUTPUT"
+
+  # Separate job so the notification is sent even if the build job dies early or times out.
+  notify:
+    needs: build
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Send result to ntfy
+        env:
+          RESULT: ${{ needs.build.result }}
+          ERRORS: ${{ needs.build.outputs.errors }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RELEASES_URL: ${{ github.server_url }}/${{ github.repository }}/releases
+        run: |
+          set -a; . ./project.env; set +a
+          if [ "$RESULT" = "success" ]; then
+            TITLE="$APP_NAME build $RUN_NUMBER succeeded"; TAGS="white_check_mark"; PRIORITY="default"
+            CLICK="$RELEASES_URL"; BODY="Tap to open the release"
+          else
+            TITLE="$APP_NAME build $RUN_NUMBER FAILED ($RESULT)"; TAGS="x"; PRIORITY="high"
+            CLICK="$RUN_URL"; BODY="${ERRORS:-Open the run for details}"
+          fi
+          curl -sS -o /dev/null -w "ntfy HTTP %{http_code}\n" -X POST \
+            -H "Title: $TITLE" -H "Tags: $TAGS" -H "Priority: $PRIORITY" -H "Click: $CLICK" \
+            -d "$BODY" "https://ntfy.sh/$NTFY_TOPIC"
