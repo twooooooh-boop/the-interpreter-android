@@ -72,7 +72,7 @@ class KeymapJsonTest {
         val r = success(text)
         val table = r.maps.getValue(demon)
         assertEquals(listOf("x"), table['a'])
-        assertEquals(listOf("y"), table['b'])                 // "x" already belongs to a
+        assertEquals(listOf("x", "y"), table['b'])           // a key may stand for several letters
         assertEquals(KeymapRules.MAX_KEYS, table.getValue('c').size)
         assertTrue(r.warnings.size >= 5)
         assertTrue(r.warnings.any { it.contains("mystery") })

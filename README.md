@@ -48,10 +48,12 @@ Pick a language, tap a letter, type a key, **Add**. A letter can have up to 8 ke
 characters each). All keys decode; the first (green, **PRIMARY**) is used when encoding.
 A key already used by another letter moves to the new one. **Reset** restores a language's built-in keys.
 
-## Interpret mode: word by word
-Decoded text is shown word by word. Under every word whose letters have several keys, the same word
-written with the 2nd, 3rd, … key is shown, faded (three rows are visible, more scroll).
-Chips: **Words** (default) · **Normal** (plain text) · **Key 1, Key 2, …** (the whole message in one key style) · **Mixed** · **All**.
+## One key, several letters
+A key can be given to more than one letter (for example `ɣ` for **G** and **t**). When decoding, the first
+meaning is shown and the others are listed under it, faded — letter by letter, inside the word
+(three rows are visible, more scroll). The first meaning is the letter that has the key as its **first** key;
+on a tie the capital letter comes first, then a–z.
+Interpret chips: **Words** (the faded meanings) · **Normal** (plain text) · **Key 1, Key 2, …** (the whole message in one key style) · **Mixed** · **All**.
 
 ## Reverse mode: one output per key
 **Key 1, Key 2, …** — Key *n* uses every letter's *n*-th key (its primary key if it has fewer), plus **Mixed** (random key per letter, **Reroll**) and **All**.

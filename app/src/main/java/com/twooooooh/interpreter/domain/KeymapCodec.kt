@@ -36,12 +36,11 @@ object KeymapCodec {
         if (lines.firstOrNull() != HEADER) return KeymapState()
 
         val loaded = LinkedHashMap<CipherLanguage, MutableMap<Char, List<String>>>()
-        val used = HashMap<CipherLanguage, MutableSet<String>>()
         for (line in lines.drop(1)) {
             val m = LINE.find(line) ?: continue
             val language = CipherLanguage.entries.firstOrNull { it.id == m.groupValues[1] } ?: continue
             val letter = m.groupValues[2][0]
-            val seen = used.getOrPut(language) { HashSet() }
+            val seen = HashSet<String>()
             val keys = ArrayList<String>()
             for (h in m.groupValues[3].split(',').filter { it.isNotEmpty() }) {
                 val key = fromHex(h) ?: continue

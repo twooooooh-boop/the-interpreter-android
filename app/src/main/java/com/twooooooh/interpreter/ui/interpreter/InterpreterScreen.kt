@@ -83,7 +83,7 @@ import com.twooooooh.interpreter.ui.theme.KeyTextStyle
 import kotlinx.coroutines.launch
 
 // Which output is shown: a key index (0, 1, 2 …) or one of these special views.
-private const val VIEW_WORDS = -4    // Interpret: word by word, with the other key styles faded underneath
+private const val VIEW_WORDS = -4    // Interpret: word by word, other meanings of a key faded under the letter
 private const val VIEW_NORMAL = -3   // Interpret: plain decoded text
 private const val VIEW_ALL = -2
 private const val VIEW_MIXED = -1
@@ -115,15 +115,27 @@ fun InterpreterScreen(
     }
     val normalText = remember(input, mode, tables) { if (interpret) Interpreter.decode(input, tables) else "" }
     val multi = keyOutputs.size > 1
+    // Does any key of the input stand for more than one letter?
+    val ambiguous = remember(input, mode, tables) { interpret && Interpreter.hasAmbiguity(input, tables) }
 
     var selection by rememberSaveable(mode) { mutableStateOf(if (interpret) VIEW_WORDS else 0) }
     var mixSeed by rememberSaveable { mutableStateOf(1L) }
-    val defaultView = if (interpret) VIEW_WORDS else 0
+
+    val chips = remember(multi, ambiguous, interpret, keyOutputs.size) {
+        buildList<ViewChip> {
+            if (interpret && ambiguous) add(ViewChip(VIEW_WORDS, "Words"))
+            if (interpret && (ambiguous || multi)) add(ViewChip(VIEW_NORMAL, "Normal"))
+            if (multi) {
+                for (i in keyOutputs.indices) add(ViewChip(i, "Key ${i + 1}"))
+                add(ViewChip(VIEW_MIXED, "Mixed"))
+                add(ViewChip(VIEW_ALL, "All"))
+            }
+        }
+    }
     val view = when {
-        !multi -> if (interpret) VIEW_NORMAL else 0
-        selection >= keyOutputs.size -> defaultView
-        !interpret && (selection == VIEW_NORMAL || selection == VIEW_WORDS) -> 0
-        else -> selection
+        chips.isEmpty() -> if (interpret) VIEW_NORMAL else 0
+        chips.any { it.view == selection } -> selection
+        else -> chips.first().view
     }
 
     val wordLayout = remember(input, tables, view, interpret) {
@@ -149,17 +161,6 @@ fun InterpreterScreen(
         else -> keyOutputs.getOrElse(view) { "" }
     }
 
-    val chips = remember(multi, interpret, keyOutputs.size) {
-        if (!multi) emptyList<ViewChip>() else buildList<ViewChip> {
-            if (interpret) {
-                add(ViewChip(VIEW_WORDS, "Words"))
-                add(ViewChip(VIEW_NORMAL, "Normal"))
-            }
-            for (i in keyOutputs.indices) add(ViewChip(i, "Key ${i + 1}"))
-            add(ViewChip(VIEW_MIXED, "Mixed"))
-            add(ViewChip(VIEW_ALL, "All"))
-        }
-    }
     val outputLabel = when {
         view == VIEW_WORDS -> "OUTPUT  ·  WORDS"
         view == VIEW_NORMAL -> "OUTPUT  ·  NORMAL TEXT"
@@ -700,8 +701,8 @@ private fun OutputPanel(
 }
 
 /**
- * Word by word: every word shows what it decodes to; underneath, faded, the same word written with
- * the 2nd, 3rd, … key of its letters. At most three of those rows show, the rest scrolls.
+ * Word by word. Every letter shows what its key means first; when a key can also mean other
+ * letters, those are listed under it, faded (three rows are visible, more scroll).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -711,6 +712,11 @@ private fun InterlinearView(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "Faded letters: other things the same key can mean",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+        )
         for (line in layout.lines) {
             if (line.isEmpty()) {
                 Spacer(Modifier.height(6.dp))
@@ -719,7 +725,7 @@ private fun InterlinearView(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    for (word in line) WordColumn(word = word, textStyle = textStyle)
+                    for (word in line) WordView(word = word, textStyle = textStyle)
                 }
             }
         }
@@ -734,43 +740,41 @@ private fun InterlinearView(
 }
 
 @Composable
-private fun WordColumn(word: Interpreter.WordReading, textStyle: TextStyle) {
-    val faded = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-    val fadedLabel = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-    Column {
+private fun WordView(word: Interpreter.WordReading, textStyle: TextStyle) {
+    if (!word.hasAlternates) {
         Text(text = word.decoded, style = textStyle, color = MaterialTheme.colorScheme.tertiary)
-        if (word.alternates.isNotEmpty()) {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 66.dp)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                word.alternates.forEachIndexed { i, alternate ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            text = ordinal(i + 2),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = fadedLabel,
-                        )
-                        Text(
-                            text = alternate,
-                            style = KeyTextStyle.copy(fontSize = 13.sp, lineHeight = 20.sp),
-                            color = faded,
-                        )
-                    }
-                }
-            }
+    } else {
+        Row {
+            for (cell in word.cells) LetterCell(cell = cell, textStyle = textStyle)
         }
     }
 }
 
-private fun ordinal(n: Int): String = when (n) {
-    2 -> "2nd"
-    3 -> "3rd"
-    else -> "${n}th"
+@Composable
+private fun LetterCell(cell: Interpreter.Cell, textStyle: TextStyle) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = cell.text,
+            style = textStyle,
+            color = if (cell.unknown) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+        )
+        if (cell.alternates.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 66.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                for (alternate in cell.alternates) {
+                    Text(
+                        text = alternate,
+                        style = KeyTextStyle.copy(fontSize = 13.sp, lineHeight = 20.sp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** One output with its own copy button (used by the "All" view). */

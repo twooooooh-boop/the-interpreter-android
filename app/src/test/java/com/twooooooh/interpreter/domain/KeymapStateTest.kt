@@ -39,12 +39,13 @@ class KeymapStateTest {
     }
 
     @Test
-    fun addingAKeyOwnedByAnotherLetterMovesIt() {
-        val r = KeymapState().addKey(demon, 'b', "\u0394")
+    fun aKeyCanStandForSeveralLetters() {
+        val r = KeymapState().addKey(demon, 'b', "\u0394")      // a's key
         assertTrue(r.ok)
-        assertEquals("Moved here from 'a'", r.message)
-        assertTrue(r.state.keysFor(demon, 'a').isEmpty())
+        assertEquals("Added. It also stands for 'a'", r.message)
+        assertEquals(listOf("\u0394"), r.state.keysFor(demon, 'a'))   // a keeps it
         assertEquals(listOf("\u0431", "\u0394"), r.state.keysFor(demon, 'b'))
+        assertEquals(listOf('a', 'b'), r.state.lettersOf(demon, "\u0394"))
     }
 
     @Test

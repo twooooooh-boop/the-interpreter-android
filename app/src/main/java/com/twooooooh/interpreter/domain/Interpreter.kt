@@ -14,7 +14,14 @@ object Interpreter {
     enum class TokenKind { KEY, PASS, UNKNOWN }
 
     /** One piece of the input: a key (decodes to [letter]), a plain ASCII char, or an unknown symbol. */
-    class Token(val start: Int, val end: Int, val kind: TokenKind, val letter: String? = null)
+    class Token(
+        val start: Int,
+        val end: Int,
+        val kind: TokenKind,
+        val letter: String? = null,
+        /** Further meanings of a key that stands for several letters (the first meaning is [letter]). */
+        val alternates: List<String> = emptyList(),
+    )
 
     /** Splits [input] exactly the way [decode] reads it (longest key first). */
     fun tokenize(input: String, tables: CipherTables): List<Token> {
@@ -27,7 +34,9 @@ object Interpreter {
                 if (i + len <= n) {
                     val letter = tables.decodeMap[input.substring(i, i + len)]
                     if (letter != null) {
-                        tokens.add(Token(i, i + len, TokenKind.KEY, letter))
+                        val key = input.substring(i, i + len)
+                        val others = tables.meaningsByKey[key]?.drop(1)?.map { it.toString() }.orEmpty()
+                        tokens.add(Token(i, i + len, TokenKind.KEY, letter, others))
                         i += len
                         matched = true
                         break
@@ -154,14 +163,20 @@ object Interpreter {
 
     // ---- Interpret mode: word by word ("interlinear") reading ------------------------------------
 
-    /**
-     * One word of the input: how it was typed, what it decodes to, and the same word written with
-     * the 2nd, 3rd, ... key of its letters ([alternates], empty when no letter of it has several keys).
-     */
-    class WordReading(val encoded: String, val decoded: String, val alternates: List<String>)
+    /** One decoded piece: a letter (with the other letters its key can mean), a plain char or "[n]". */
+    class Cell(val text: String, val alternates: List<String> = emptyList(), val unknown: Boolean = false)
+
+    /** One word of the input: how it was typed, what it decodes to, and its pieces. */
+    class WordReading(val encoded: String, val decoded: String, val cells: List<Cell>) {
+        val hasAlternates: Boolean get() = cells.any { it.alternates.isNotEmpty() }
+    }
 
     /** The words of the input, split into the lines of the input. */
     class WordLayout(val lines: List<List<WordReading>>, val truncated: Boolean)
+
+    /** Does any key of [input] stand for more than one letter? */
+    fun hasAmbiguity(input: String, tables: CipherTables): Boolean =
+        tables.meaningsByKey.isNotEmpty() && tokenize(input, tables).any { it.alternates.isNotEmpty() }
 
     /**
      * Reads [input] word by word. Words are split at spaces / tabs / new lines; the decoded words,
@@ -173,6 +188,7 @@ object Interpreter {
         val lines = ArrayList<List<WordReading>>()
         var current = ArrayList<WordReading>()
         val decoded = StringBuilder()
+        var cells = ArrayList<Cell>()
         var wordStart = -1
         var wordEnd = -1
         var count = 0
@@ -181,13 +197,11 @@ object Interpreter {
         fun flush(): Boolean {                       // false when the word limit is reached
             if (wordStart < 0) return true
             if (count >= maxWords) { truncated = true; return false }
-            val encoded = input.substring(wordStart, wordEnd)
-            val styles = transcodeCount(encoded, tables)
-            val alternates = if (styles > 1) List(styles - 1) { transcodeVariant(encoded, tables, it + 1) } else emptyList()
-            current.add(WordReading(encoded, decoded.toString(), alternates))
+            current.add(WordReading(input.substring(wordStart, wordEnd), decoded.toString(), cells))
             count++
             wordStart = -1
             decoded.setLength(0)
+            cells = ArrayList()
             return true
         }
 
@@ -200,14 +214,16 @@ object Interpreter {
             } else {
                 if (wordStart < 0) wordStart = t.start
                 wordEnd = t.end
-                when (t.kind) {
-                    TokenKind.KEY -> decoded.append(t.letter)
-                    TokenKind.PASS -> decoded.append(input, t.start, t.end)
+                val cell = when (t.kind) {
+                    TokenKind.KEY -> Cell(t.letter!!, t.alternates)
+                    TokenKind.PASS -> Cell(input.substring(t.start, t.end))
                     TokenKind.UNKNOWN -> {
                         val number = unknown.getOrPut(input.substring(t.start, t.end)) { unknown.size + 1 }
-                        decoded.append('[').append(number).append(']')
+                        Cell("[$number]", unknown = true)
                     }
                 }
+                cells.add(cell)
+                decoded.append(cell.text)
             }
         }
         if (!truncated) flush()
@@ -234,8 +250,7 @@ object Interpreter {
 
     /** Letters (a-z, A-Z) that no key points to, as "a b c " (trailing space like the original). */
     fun unassignedLetters(tables: CipherTables): String {
-        val assigned = tables.decodeMap.values.toSet()
-        return Letters.ALL.filter { it.toString() !in assigned }.joinToString("") { "$it " }
+        return Letters.ALL.filter { it !in tables.keysByLetter }.joinToString("") { "$it " }
     }
 
     /** Text of the MISSING.txt file written next to a saved session. */

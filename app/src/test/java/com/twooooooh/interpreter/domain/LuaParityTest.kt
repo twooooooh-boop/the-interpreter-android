@@ -7,9 +7,9 @@ import org.junit.Test
 /**
  * Replays vectors recorded from the original Lua implementation (resources/lua_vectors.txt):
  *   V  default tables, decode (I) / encode (R)
- *   OP key edits, applied in order, with the result the Lua code gave
- *   C  conversions after those edits
- *   K  key lists after those edits       D  default key order
+ *   D  default key order
+ * (The recorded key-edit vectors are no longer replayed: in the Lua app a key could belong to one
+ *  letter only, now one key can stand for several letters. The built-in maps still match exactly.)
  */
 class LuaParityTest {
 
@@ -52,37 +52,6 @@ class LuaParityTest {
         for (f in lines.filter { it[0] == "D" }) {
             val expected = if (f.size > 3 && f[3].isNotEmpty()) f[3].split(',').map(::unhex) else emptyList()
             assertEquals("D ${f[1]} ${f[2]}", expected, state.keysFor(lang(f[1]), f[2][0]))
-        }
-    }
-
-    @Test
-    fun editsAndConversionsMatchLua() {
-        var state = KeymapState()
-        for (f in lines.filter { it[0] == "OP" }) {
-            val language = lang(f[2])
-            when (f[1]) {
-                "add" -> {
-                    val r = state.addKey(language, f[3][0], unhex(f[4]))
-                    assertEquals("ok for ${f.joinToString(" ")}", f[5] == "true", r.ok)
-                    assertEquals("msg for ${f.joinToString(" ")}", unhex(f[6]), r.message)
-                    state = r.state
-                }
-                "primary" -> state = state.makePrimary(language, f[3][0], f[4].toInt() - 1)
-                "clear" -> state = state.clearLetter(language, f[3][0])
-                "remove" -> state = state.removeKey(language, f[3][0], f[4].toInt() - 1)
-                else -> error("unknown op ${f[1]}")
-            }
-        }
-        var count = 0
-        for (f in lines.filter { it[0] == "C" }) {
-            val (actual, expected) = convert(state, f)
-            assertEquals("C ${f[1]} ${f[2]} '${unhex(f[3])}'", expected, actual)
-            count++
-        }
-        assertTrue(count > 400)
-        for (f in lines.filter { it[0] == "K" }) {
-            val expected = if (f.size > 3 && f[3].isNotEmpty()) f[3].split(',').map(::unhex) else emptyList()
-            assertEquals("K ${f[1]} ${f[2]}", expected, state.keysFor(lang(f[1]), f[2][0]))
         }
     }
 }

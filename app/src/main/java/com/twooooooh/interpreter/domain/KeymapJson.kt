@@ -76,7 +76,6 @@ object KeymapJson {
                 continue
             }
             val parsed = LinkedHashMap<Char, List<String>>()
-            val seen = HashSet<String>()
             var invalid = 0
             var duplicates = 0
             var tooMany = 0
@@ -87,10 +86,11 @@ object KeymapJson {
                 val list = rawKeys as? List<*>
                 if (list == null) { invalid++; continue }
                 val keys = ArrayList<String>()
+                val seenHere = HashSet<String>()
                 for (k in list) {
                     val key = k as? String
                     if (key == null || KeymapRules.validateKey(key) != null) { invalid++; continue }
-                    if (!seen.add(key)) { duplicates++; continue }
+                    if (!seenHere.add(key)) { duplicates++; continue }
                     if (keys.size >= KeymapRules.MAX_KEYS) { tooMany++; continue }
                     keys.add(key)
                 }
@@ -99,7 +99,7 @@ object KeymapJson {
             val name = language.displayName
             if (badLetters > 0) warnings.add("$name: ignored $badLetters entries that are not a letter")
             if (invalid > 0) warnings.add("$name: skipped $invalid invalid keys")
-            if (duplicates > 0) warnings.add("$name: skipped $duplicates keys used by more than one letter")
+            if (duplicates > 0) warnings.add("$name: skipped $duplicates repeated keys")
             if (tooMany > 0) warnings.add("$name: skipped $tooMany keys over the limit of ${KeymapRules.MAX_KEYS} per letter")
             result[language] = Letters.ALL.associateWith { parsed[it].orEmpty() }
         }

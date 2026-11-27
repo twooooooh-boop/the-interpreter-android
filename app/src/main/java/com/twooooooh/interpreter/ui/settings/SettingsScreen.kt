@@ -56,6 +56,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.twooooooh.interpreter.domain.CipherLanguage
 import com.twooooooh.interpreter.domain.KeymapImport
 import com.twooooooh.interpreter.domain.KeymapRules
+import com.twooooooh.interpreter.domain.KeymapState
 import com.twooooooh.interpreter.domain.Letters
 import com.twooooooh.interpreter.ui.KeyChip
 import com.twooooooh.interpreter.ui.LanguageChips
@@ -158,7 +159,7 @@ fun SettingsScreen(
         }
 
         Text(
-            text = "Tap a letter to choose its keys. A letter can have several keys; all of them decode. " +
+            text = "Tap a letter to choose its keys. A letter can have several keys, and one key can be given to several letters. " +
                 "The first (green) key is used when encoding.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -185,6 +186,7 @@ fun SettingsScreen(
             language = language,
             letter = editing,
             keys = keymap.keysFor(language, editing),
+            keymap = keymap,
             viewModel = viewModel,
         )
     }
@@ -295,6 +297,7 @@ private fun KeyEditorSheet(
     language: CipherLanguage,
     letter: Char,
     keys: List<String>,
+    keymap: KeymapState,
     viewModel: SettingsViewModel,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -350,7 +353,7 @@ private fun KeyEditorSheet(
 
             Text(
                 text = message?.text
-                    ?: "A key that another letter already uses moves here. Up to ${KeymapRules.MAX_KEYS} keys per letter.",
+                    ?: "A key can stand for several letters: decoding shows the first letter, the others faded. Up to ${KeymapRules.MAX_KEYS} keys per letter.",
                 style = MaterialTheme.typography.bodySmall,
                 color = when {
                     message == null -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -374,12 +377,21 @@ private fun KeyEditorSheet(
                             .padding(start = 14.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = key,
-                            style = KeyTextStyle.copy(fontSize = 20.sp),
-                            color = if (index == 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                        )
+                        val alsoMeans = keymap.lettersOf(language, key).filter { it != letter }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = key,
+                                style = KeyTextStyle.copy(fontSize = 20.sp),
+                                color = if (index == 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
+                            )
+                            if (alsoMeans.isNotEmpty()) {
+                                Text(
+                                    text = "also stands for " + alsoMeans.joinToString(", "),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                         if (index == 0) {
                             Text(
                                 text = "PRIMARY",
