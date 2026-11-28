@@ -45,11 +45,12 @@ class InterpreterViewModel(application: Application) : AndroidViewModel(applicat
                 val variants = Interpreter.allVariants(input, tables)
                 SessionPlanner.plan(lang, m, input, variants[0], tables, extraOutputs = variants.drop(1))
             } else {
-                val styles = Interpreter.allTranscodes(input, tables)
+                val readings = Interpreter.allReadings(input, tables)
                 SessionPlanner.plan(
-                    lang, m, input, Interpreter.decode(input, tables), tables,
-                    extraOutputs = if (styles.size > 1) styles else emptyList(),
-                    firstExtraKey = 1,
+                    lang, m, input, readings[0], tables,
+                    extraOutputs = readings.drop(1),
+                    firstExtraKey = 2,
+                    extraBaseName = "output(NORMAL)",
                 )
             }
             val name = app.saves.write(root, plan)

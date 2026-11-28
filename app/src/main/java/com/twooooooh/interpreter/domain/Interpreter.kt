@@ -123,7 +123,51 @@ object Interpreter {
         return out.toString()
     }
 
-    // ---- Interpret mode: the same message written in each key style --------------------------
+    // ---- Interpret mode: several DECODED readings of the same text ---------------------------------
+
+    /** How many readings [input] has: the most meanings any of its keys has (at least 1). */
+    fun readingCount(input: String, tables: CipherTables): Int {
+        var most = 1
+        for (t in tokenize(input, tables)) {
+            val n = 1 + t.alternates.size
+            if (n > most) most = n
+        }
+        return most
+    }
+
+    /**
+     * Reading number [index] (0 = every key read with its first meaning = [decode]). A key with fewer
+     * meanings keeps its first meaning. The result is always normal text.
+     */
+    fun decodeReading(input: String, tables: CipherTables, index: Int): String =
+        decodeWith(input, tables) { meanings -> meanings.getOrElse(index) { meanings[0] } }
+
+    fun allReadings(input: String, tables: CipherTables): List<String> =
+        List(readingCount(input, tables)) { decodeReading(input, tables, it) }
+
+    /** Every ambiguous key gets a random one of its meanings. Same [seed] = same result. */
+    fun decodeMixed(input: String, tables: CipherTables, seed: Long): String {
+        val random = java.util.Random(seed)
+        return decodeWith(input, tables) { meanings -> meanings[random.nextInt(meanings.size)] }
+    }
+
+    private fun decodeWith(input: String, tables: CipherTables, pick: (List<String>) -> String): String {
+        val out = StringBuilder()
+        val unknown = LinkedHashMap<String, Int>()
+        for (t in tokenize(input, tables)) {
+            when (t.kind) {
+                TokenKind.KEY -> out.append(pick(listOf(t.letter!!) + t.alternates))
+                TokenKind.PASS -> out.append(input, t.start, t.end)
+                TokenKind.UNKNOWN -> {
+                    val number = unknown.getOrPut(input.substring(t.start, t.end)) { unknown.size + 1 }
+                    out.append('[').append(number).append(']')
+                }
+            }
+        }
+        return out.toString()
+    }
+
+    // ---- (older) the same message written in each key style --------------------------
 
     /** How many key styles the letters of [input] have (the most keys any decoded letter owns, at least 1). */
     fun transcodeCount(input: String, tables: CipherTables): Int {

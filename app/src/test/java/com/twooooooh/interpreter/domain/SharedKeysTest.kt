@@ -96,4 +96,32 @@ class SharedKeysTest {
         assertEquals(s.lettersOf(demon, gamma), KeymapState().importMaps(back.maps).lettersOf(demon, gamma))
         assertEquals(s, KeymapCodec.decode(KeymapCodec.encode(s)))
     }
+
+    @Test
+    fun interpretReadingsAreAlwaysDecodedText() {
+        var s = tAlsoGamma()
+        s = s.addKey(demon, 'x', gamma).state                      // gamma: G, t, x
+        val t = s.tables(demon)
+        val input = "$gamma\u0449 $gamma"                          // gamma m gamma
+        assertEquals(3, Interpreter.readingCount(input, t))
+        assertEquals(listOf("Gm G", "tm t", "xm x"), Interpreter.allReadings(input, t))
+        assertEquals(Interpreter.decode(input, t), Interpreter.decodeReading(input, t, 0))
+        for (seed in 1L..10L) {
+            val mixed = Interpreter.decodeMixed(input, t, seed)
+            assertTrue(mixed.length == 4 && mixed[1] == 'm' && mixed[0] in "Gtx" && mixed[3] in "Gtx")
+        }
+        assertEquals(1, Interpreter.readingCount("\u0434\u0449", t))   // nothing ambiguous -> one reading
+    }
+
+    @Test
+    fun savedInterpretSessionNamesTheExtraReadings() {
+        val t = tAlsoGamma().tables(demon)
+        val readings = Interpreter.allReadings(gamma, t)
+        val plan = SessionPlanner.plan(demon, Mode.INTERPRET, gamma, readings[0], t, java.util.Date(0L), readings.drop(1), 2, "output(NORMAL)")
+        assertEquals(
+            listOf("input(DEMON).txt", "output(NORMAL).txt", "output(NORMAL)-key2.txt", "MISSING.txt"),
+            plan.files.map { it.name },
+        )
+        assertEquals("t", plan.files[2].content)
+    }
 }

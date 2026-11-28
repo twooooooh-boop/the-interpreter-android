@@ -53,7 +53,7 @@ A key can be given to more than one letter (for example `ɣ` for **G** and **t**
 meaning is shown and the others are listed under it, faded — letter by letter, inside the word
 (three rows are visible, more scroll). The first meaning is the letter that has the key as its **first** key;
 on a tie the capital letter comes first, then a–z.
-Interpret chips: **Words** (the faded meanings) · **Normal** (plain text) · **Key 1, Key 2, …** (the whole message in one key style) · **Mixed** · **All**.
+Interpret chips (all of them show decoded normal text): **Words** (the faded meanings) · **Normal** (first meanings) · **Key 2, Key 3, …** (every key read with its 2nd, 3rd … meaning) · **Mixed** (random meaning per key) · **All**.
 
 ## Reverse mode: one output per key
 **Key 1, Key 2, …** — Key *n* uses every letter's *n*-th key (its primary key if it has fewer), plus **Mixed** (random key per letter, **Reroll**) and **All**.

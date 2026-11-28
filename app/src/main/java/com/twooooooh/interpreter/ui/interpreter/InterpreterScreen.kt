@@ -111,7 +111,7 @@ fun InterpreterScreen(
 
     // Interpret: normal text + the message written in each key style. Reverse: one output per key.
     val keyOutputs = remember(input, mode, tables) {
-        if (interpret) Interpreter.allTranscodes(input, tables) else Interpreter.allVariants(input, tables)
+        if (interpret) Interpreter.allReadings(input, tables) else Interpreter.allVariants(input, tables)
     }
     val normalText = remember(input, mode, tables) { if (interpret) Interpreter.decode(input, tables) else "" }
     val multi = keyOutputs.size > 1
@@ -121,12 +121,17 @@ fun InterpreterScreen(
     var selection by rememberSaveable(mode) { mutableStateOf(if (interpret) VIEW_WORDS else 0) }
     var mixSeed by rememberSaveable { mutableStateOf(1L) }
 
-    val chips = remember(multi, ambiguous, interpret, keyOutputs.size) {
+    val chips = remember(multi, interpret, keyOutputs.size) {
         buildList<ViewChip> {
-            if (interpret && ambiguous) add(ViewChip(VIEW_WORDS, "Words"))
-            if (interpret && (ambiguous || multi)) add(ViewChip(VIEW_NORMAL, "Normal"))
             if (multi) {
-                for (i in keyOutputs.indices) add(ViewChip(i, "Key ${i + 1}"))
+                if (interpret) {
+                    // every Interpret output is decoded text: Normal = first meanings, Key 2, 3 … = later meanings
+                    add(ViewChip(VIEW_WORDS, "Words"))
+                    add(ViewChip(VIEW_NORMAL, "Normal"))
+                    for (i in 1 until keyOutputs.size) add(ViewChip(i, "Key ${i + 1}"))
+                } else {
+                    for (i in keyOutputs.indices) add(ViewChip(i, "Key ${i + 1}"))
+                }
                 add(ViewChip(VIEW_MIXED, "Mixed"))
                 add(ViewChip(VIEW_ALL, "All"))
             }
@@ -144,14 +149,14 @@ fun InterpreterScreen(
     val mixed = remember(input, tables, mixSeed, multi, interpret) {
         when {
             !multi -> ""
-            interpret -> Interpreter.transcodeMixed(input, tables, mixSeed)
+            interpret -> Interpreter.decodeMixed(input, tables, mixSeed)
             else -> Interpreter.encodeMixed(input, tables, mixSeed)
         }
     }
     val cards = remember(normalText, keyOutputs, interpret) {
         buildList<Pair<String, String>> {
             if (interpret) add("NORMAL TEXT" to normalText)
-            keyOutputs.forEachIndexed { i, text -> add("KEY ${i + 1}" to text) }
+            keyOutputs.forEachIndexed { i, text -> if (!(interpret && i == 0)) add("KEY ${i + 1}" to text) }
         }
     }
     val output = when (view) {
@@ -166,7 +171,7 @@ fun InterpreterScreen(
         view == VIEW_NORMAL -> "OUTPUT  ·  NORMAL TEXT"
         view == VIEW_ALL -> "OUTPUT  ·  ALL ${cards.size}"
         view == VIEW_MIXED -> "OUTPUT  ·  MIXED KEYS"
-        interpret -> "OUTPUT  ·  KEY ${view + 1} STYLE"
+        interpret -> "OUTPUT  ·  KEY ${view + 1} READING"
         else -> "OUTPUT  ·  ENCODED"
     }
     val outputDetail = buildString {
@@ -262,9 +267,8 @@ fun InterpreterScreen(
             onReroll = { mixSeed += 1 },
             onUseAsInput = {
                 val text = output
-                // decoded normal text goes back in as Reverse input; encoded output goes in as Interpret input
-                val decodedView = interpret && (view == VIEW_NORMAL || view == VIEW_WORDS)
-                viewModel.setMode(if (decodedView) Mode.REVERSE else Mode.INTERPRET)
+                // decoded text goes back in as Reverse input; encoded output goes in as Interpret input
+                viewModel.setMode(if (interpret) Mode.REVERSE else Mode.INTERPRET)
                 field = TextFieldValue(text, TextRange(text.length))
             },
             modifier = paneModifier,
